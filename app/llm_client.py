@@ -14,9 +14,12 @@ def get_client():
     """Получить OpenAI клиент с ленивой инициализацией"""
     global _client
     if _client is None:
+        # Исключаем проблемные параметры для совместимости
         _client = openai.OpenAI(
             base_url=config.LLM_BASE_URL,
-            api_key=config.OPENROUTER_API_KEY
+            api_key=config.OPENROUTER_API_KEY,
+            timeout=30.0,  # Добавляем timeout
+            max_retries=config.RETRY_COUNT
         )
     return _client
 
