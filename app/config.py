@@ -16,7 +16,7 @@ class Config:
     OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
     LLM_BASE_URL: str = os.getenv("LLM_BASE_URL", "https://gptunnel.ru/v1")
     MODEL_NAME: str = "gpt-4o"  # Быстрая модель
-    MAX_TOKENS: int = 100   # Короткие ответы
+    MAX_TOKENS: int = 500   # Короткие ответы
     TEMPERATURE: float = 0.7
     RETRY_COUNT: int = 1
     
