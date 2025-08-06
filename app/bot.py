@@ -24,6 +24,9 @@ async def start_handler(message: types.Message):
 @dp.message()
 async def message_handler(message: types.Message):
     """Обработчик сообщений через LLM"""
+    # Показываем что бот печатает
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    
     # Формируем промпт с сообщением пользователя
     prompt = BASIC_PROMPT.format(user_message=message.text)
     

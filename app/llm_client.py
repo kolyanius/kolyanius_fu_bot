@@ -14,14 +14,17 @@ def get_client():
     """Получить OpenAI клиент с ленивой инициализацией"""
     global _client
     if _client is None:
-        # Короткие timeout'ы для быстрого ответа
+        logger.info(f"Initializing OpenAI client: {config.LLM_BASE_URL}")
+        logger.info(f"API key length: {len(config.OPENROUTER_API_KEY)}")
+        
         _client = openai.OpenAI(
             base_url=config.LLM_BASE_URL,
             api_key=config.OPENROUTER_API_KEY,
-            timeout=15.0,  # Короткий timeout для быстрого ответа
-            max_retries=2   # Максимум 2 попытки
+            timeout=30.0,   # Увеличиваем для отладки
+            max_retries=0   # Убираем retry для чистоты
         )
     return _client
+
 
 async def generate_text(prompt: str) -> str:
     """
@@ -35,37 +38,35 @@ async def generate_text(prompt: str) -> str:
     """
     import asyncio
     
-    # Список запасных ответов если LLM не отвечает
+    # Простые fallback ответы
     fallback_responses = [
-        "Понимаю вашу ситуацию. Попробую помочь с отмазкой.",
-        "Хм, дайте подумать над хорошей отмазкой...",
-        "Сейчас придумаю что-то подходящее!",
-        "Минутку, генерирую идеальную отмазку..."
+        "Произошла ошибка, попробуйте еще раз",
+        "Сервер временно недоступен", 
+        "Попробуйте повторить запрос"
     ]
     
     try:
-        # Ограничиваем общее время выполнения
-        async def make_request():
-            client = get_client()
-            response = client.chat.completions.create(
-                model=config.MODEL_NAME,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=config.MAX_TOKENS,
-                temperature=config.TEMPERATURE
-            )
-            return response.choices[0].message.content.strip()
+        # Прямой синхронный вызов БЕЗ executor - проверяем основную проблему
+        logger.info(f"Making LLM request to {config.LLM_BASE_URL}")
         
-        # Ждем максимум 10 секунд
-        return await asyncio.wait_for(make_request(), timeout=10.0)
+        client = get_client()
+        response = client.chat.completions.create(
+            model=config.MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=100,  # Вернули как было
+            temperature=0.7  # Вернули как было
+        )
+        result = response.choices[0].message.content.strip()
+        
+        logger.info(f"LLM response successful: {len(result)} chars")
+        return result
         
     except asyncio.TimeoutError:
-        logger.warning("LLM request timeout - using fallback")
+        logger.warning("LLM request timeout")
         import random
         return random.choice(fallback_responses)
         
     except Exception as e:
         logger.error(f"LLM API error: {e}")
-        # Если ошибка rate limit - даем специальный ответ
-        if "rate limit" in str(e).lower() or "429" in str(e):
-            return "Сейчас много запросов, попробуйте через минутку!"
-        return "Произошла ошибка, попробуйте еще раз"
+        import random
+        return random.choice(fallback_responses)
