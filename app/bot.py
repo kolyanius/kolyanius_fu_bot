@@ -5,6 +5,8 @@ import logging
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from app.config import config
+from app.llm_client import generate_text
+from app.prompts import BASIC_PROMPT
 
 # Настройка логирования
 logging.basicConfig(level=config.LOG_LEVEL)
@@ -20,9 +22,16 @@ async def start_handler(message: types.Message):
     await message.answer("Привет! Я бот-отмазочник!")
 
 @dp.message()
-async def echo_handler(message: types.Message):
-    """Эхо-обработчик - отвечает 'Привет!' на любое сообщение"""
-    await message.answer("Привет!")
+async def message_handler(message: types.Message):
+    """Обработчик сообщений через LLM"""
+    # Формируем промпт с сообщением пользователя
+    prompt = BASIC_PROMPT.format(user_message=message.text)
+    
+    # Генерируем ответ через LLM
+    response = await generate_text(prompt)
+    
+    # Отправляем ответ пользователю
+    await message.answer(response)
 
 async def start_bot():
     """Запуск бота"""

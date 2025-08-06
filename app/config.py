@@ -12,6 +12,14 @@ class Config:
     # Telegram
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     
+    # LLM
+    OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
+    LLM_BASE_URL: str = os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1")
+    MODEL_NAME: str = "openai/gpt-4o"
+    MAX_TOKENS: int = 150
+    TEMPERATURE: float = 0.8
+    RETRY_COUNT: int = 1
+    
     # Validation
     MAX_MESSAGE_LENGTH: int = 200
     
@@ -21,5 +29,7 @@ class Config:
     def validate(self):
         if not self.TELEGRAM_BOT_TOKEN:
             raise ValueError("TELEGRAM_BOT_TOKEN is required")
+        if not self.OPENROUTER_API_KEY:
+            raise ValueError("OPENROUTER_API_KEY is required")
 
 config = Config()
