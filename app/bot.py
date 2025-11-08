@@ -177,9 +177,12 @@ async def history_handler(message: types.Message):
             elif excuse.rating == -1:
                 rating_text = " 👎"
 
+            # Сокращаем ситуацию до 100 символов для компактности
+            situation = excuse.original_message[:100] + ('...' if len(excuse.original_message) > 100 else '')
+
             response += f"{i}. {style_emoji} **{STYLES[excuse.style]['name']}**{rating_text}\n"
-            response += f"   _{excuse.original_message[:50]}..._\n"
-            response += f"   {excuse.generated_text[:100]}...\n\n"
+            response += f"   _Ситуация: {situation}_\n"
+            response += f"   {excuse.generated_text}\n\n"
 
         response += "💡 Используй /favorites для просмотра избранного"
 
@@ -209,8 +212,11 @@ async def favorites_handler(message: types.Message):
 
         for i, excuse in enumerate(favorites, 1):
             style_emoji = STYLES[excuse.style]['emoji']
+            # Сокращаем ситуацию до 100 символов для компактности
+            situation = excuse.original_message[:100] + ('...' if len(excuse.original_message) > 100 else '')
+
             response += f"{i}. {style_emoji} **{STYLES[excuse.style]['name']}**\n"
-            response += f"   _{excuse.original_message[:50]}..._\n"
+            response += f"   _Ситуация: {situation}_\n"
             response += f"   {excuse.generated_text}\n\n"
 
         await message.answer(response, parse_mode="Markdown")
@@ -425,9 +431,12 @@ async def menu_history_handler(callback: types.CallbackQuery):
             elif excuse.rating == -1:
                 rating_text = " 👎"
 
+            # Сокращаем ситуацию до 100 символов для компактности
+            situation = excuse.original_message[:100] + ('...' if len(excuse.original_message) > 100 else '')
+
             response += f"{i}. {style_emoji} **{STYLES[excuse.style]['name']}**{rating_text}\n"
-            response += f"   _{excuse.original_message[:50]}..._\n"
-            response += f"   {excuse.generated_text[:100]}...\n\n"
+            response += f"   _Ситуация: {situation}_\n"
+            response += f"   {excuse.generated_text}\n\n"
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
@@ -466,9 +475,12 @@ async def menu_favorites_handler(callback: types.CallbackQuery):
 
         for i, excuse in enumerate(favorites, 1):
             style_emoji = STYLES[excuse.style]['emoji']
+            # Сокращаем ситуацию до 100 символов для компактности
+            situation = excuse.original_message[:100] + ('...' if len(excuse.original_message) > 100 else '')
+
             response += f"{i}. {style_emoji} **{STYLES[excuse.style]['name']}**\n"
-            response += f"   _{excuse.original_message[:50]}..._\n"
-            response += f"   {excuse.generated_text[:150]}...\n\n"
+            response += f"   _Ситуация: {situation}_\n"
+            response += f"   {excuse.generated_text}\n\n"
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
