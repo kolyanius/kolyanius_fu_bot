@@ -381,17 +381,28 @@ async def voice_handler(message: types.Message):
 
         # Выполняем транскрипцию в executor (синхронный вызов в async)
         def transcribe():
+            # Не передаём prompt, чтобы избежать его возврата при ошибках
+            # Параметр language="ru" помогает улучшить качество для русского языка
             return whisper_client.audio.transcriptions.create(
                 model=config.WHISPER_MODEL,  # gpt-4o-mini-transcribe по умолчанию
                 file=voice_bytes,
                 response_format="text",  # Простой текст вместо JSON
-                prompt=config.WHISPER_PROMPT  # Промпт для улучшения качества
+                language="ru"  # Указываем русский язык для лучшего распознавания
             )
 
         transcription = await asyncio.get_event_loop().run_in_executor(None, transcribe)
 
         # При response_format="text" возвращается просто строка
         transcribed_text = transcription.strip() if isinstance(transcription, str) else transcription.text.strip()
+
+        # Проверяем, что текст не пустой
+        if not transcribed_text:
+            await message.answer(
+                "🎤 Не удалось распознать голосовое сообщение.\n"
+                "Попробуй записать заново или отправь текстом."
+            )
+            return
+
         logger.info(f"Transcribed voice from user {user_id}: {transcribed_text[:100]}")
 
         # Валидация длины
@@ -399,7 +410,8 @@ async def voice_handler(message: types.Message):
             await message.answer(
                 f"🎤 Распознано: _{transcribed_text[:100]}..._\n\n"
                 f"❌ Слишком длинное сообщение! Максимум {config.MAX_MESSAGE_LENGTH} символов.\n"
-                f"У тебя {len(transcribed_text)} символов."
+                f"У тебя {len(transcribed_text)} символов.",
+                parse_mode="Markdown"
             )
             return
 
@@ -411,7 +423,8 @@ async def voice_handler(message: types.Message):
         await message.answer(
             f"🎤 Распознано: _{transcribed_text}_\n\n"
             "Выбери стиль для отмазки:",
-            reply_markup=keyboard
+            reply_markup=keyboard,
+            parse_mode="Markdown"
         )
 
         request_logger.info(f"VOICE | User: {user_id} (@{username}) | Text: '{transcribed_text}' | Length: {len(transcribed_text)}")
