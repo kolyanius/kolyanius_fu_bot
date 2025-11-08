@@ -95,7 +95,8 @@ def create_action_keyboard(excuse_id: int, is_fav: bool = False) -> InlineKeyboa
             )
         ],
         [
-            InlineKeyboardButton(text="🔄 Другой вариант", callback_data="regenerate")
+            InlineKeyboardButton(text="🔄 Тот же стиль", callback_data="regenerate"),
+            InlineKeyboardButton(text="🎨 Другой стиль", callback_data="change_style")
         ],
         [
             InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")
@@ -678,6 +679,36 @@ async def favorite_toggle_handler(callback: types.CallbackQuery):
     except Exception as e:
         error_logger.error(f"Error in favorite_toggle_handler: {e}", exc_info=True)
         await callback.answer("❌ Ошибка при работе с избранным")
+
+
+@dp.callback_query(F.data == "change_style")
+async def change_style_handler(callback: types.CallbackQuery):
+    """Обработчик кнопки 🎨 Другой стиль - показывает выбор стилей"""
+    user_id = callback.from_user.id
+
+    try:
+        # Проверяем есть ли кэшированные данные
+        if user_id not in regenerate_cache or "original_message" not in regenerate_cache[user_id]:
+            await callback.answer("❌ Данные не найдены. Отправь новое сообщение.")
+            return
+
+        original_message = regenerate_cache[user_id]["original_message"]
+
+        # Показываем кнопки выбора стиля
+        keyboard = create_style_keyboard()
+
+        await callback.message.edit_text(
+            f"📝 Твоя ситуация: _{original_message[:100]}{'...' if len(original_message) > 100 else ''}_\n\n"
+            "🎨 Выбери новый стиль для отмазки:",
+            reply_markup=keyboard
+        )
+        await callback.answer("🎨 Выбери стиль")
+
+        logger.info(f"User {user_id} requested style change")
+
+    except Exception as e:
+        error_logger.error(f"Error in change_style_handler: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка")
 
 
 @dp.callback_query(F.data == "regenerate")
