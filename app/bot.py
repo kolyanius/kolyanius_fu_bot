@@ -158,7 +158,7 @@ async def history_handler(message: types.Message):
     user_id = message.from_user.id
 
     try:
-        excuses = await db.get_user_history(user_id, limit=10)
+        excuses = await db.get_user_history(user_id, limit=5)
 
         if not excuses:
             await message.answer(
@@ -177,12 +177,14 @@ async def history_handler(message: types.Message):
             elif excuse.rating == -1:
                 rating_text = " 👎"
 
-            # Сокращаем ситуацию до 100 символов для компактности
-            situation = excuse.original_message[:100] + ('...' if len(excuse.original_message) > 100 else '')
+            # Сокращаем ситуацию до 80 символов для компактности
+            situation = excuse.original_message[:80] + ('...' if len(excuse.original_message) > 80 else '')
+            # Сокращаем текст отмазки до 200 символов
+            excuse_text = excuse.generated_text[:200] + ('...' if len(excuse.generated_text) > 200 else '')
 
             response += f"{i}. {style_emoji} *{STYLES[excuse.style]['name']}*{rating_text}\n"
             response += f"   _Ситуация: {situation}_\n"
-            response += f"   {excuse.generated_text}\n\n"
+            response += f"   {excuse_text}\n\n"
 
         response += "💡 Используй /favorites для просмотра избранного"
 
@@ -212,12 +214,14 @@ async def favorites_handler(message: types.Message):
 
         for i, excuse in enumerate(favorites, 1):
             style_emoji = STYLES[excuse.style]['emoji']
-            # Сокращаем ситуацию до 100 символов для компактности
-            situation = excuse.original_message[:100] + ('...' if len(excuse.original_message) > 100 else '')
+            # Сокращаем ситуацию до 80 символов для компактности
+            situation = excuse.original_message[:80] + ('...' if len(excuse.original_message) > 80 else '')
+            # Сокращаем текст отмазки до 300 символов (для избранного можем больше)
+            excuse_text = excuse.generated_text[:300] + ('...' if len(excuse.generated_text) > 300 else '')
 
             response += f"{i}. {style_emoji} *{STYLES[excuse.style]['name']}*\n"
             response += f"   _Ситуация: {situation}_\n"
-            response += f"   {excuse.generated_text}\n\n"
+            response += f"   {excuse_text}\n\n"
 
         await message.answer(response, parse_mode="Markdown")
 
@@ -406,7 +410,7 @@ async def menu_history_handler(callback: types.CallbackQuery):
     user_id = callback.from_user.id
 
     try:
-        excuses = await db.get_user_history(user_id, limit=10)
+        excuses = await db.get_user_history(user_id, limit=5)
 
         if not excuses:
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -431,12 +435,14 @@ async def menu_history_handler(callback: types.CallbackQuery):
             elif excuse.rating == -1:
                 rating_text = " 👎"
 
-            # Сокращаем ситуацию до 100 символов для компактности
-            situation = excuse.original_message[:100] + ('...' if len(excuse.original_message) > 100 else '')
+            # Сокращаем ситуацию до 80 символов для компактности
+            situation = excuse.original_message[:80] + ('...' if len(excuse.original_message) > 80 else '')
+            # Сокращаем текст отмазки до 200 символов
+            excuse_text = excuse.generated_text[:200] + ('...' if len(excuse.generated_text) > 200 else '')
 
             response += f"{i}. {style_emoji} *{STYLES[excuse.style]['name']}*{rating_text}\n"
             response += f"   _Ситуация: {situation}_\n"
-            response += f"   {excuse.generated_text}\n\n"
+            response += f"   {excuse_text}\n\n"
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
@@ -475,12 +481,14 @@ async def menu_favorites_handler(callback: types.CallbackQuery):
 
         for i, excuse in enumerate(favorites, 1):
             style_emoji = STYLES[excuse.style]['emoji']
-            # Сокращаем ситуацию до 100 символов для компактности
-            situation = excuse.original_message[:100] + ('...' if len(excuse.original_message) > 100 else '')
+            # Сокращаем ситуацию до 80 символов для компактности
+            situation = excuse.original_message[:80] + ('...' if len(excuse.original_message) > 80 else '')
+            # Сокращаем текст отмазки до 300 символов (для избранного можем больше)
+            excuse_text = excuse.generated_text[:300] + ('...' if len(excuse.generated_text) > 300 else '')
 
             response += f"{i}. {style_emoji} *{STYLES[excuse.style]['name']}*\n"
             response += f"   _Ситуация: {situation}_\n"
-            response += f"   {excuse.generated_text}\n\n"
+            response += f"   {excuse_text}\n\n"
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
