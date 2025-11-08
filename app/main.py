@@ -80,29 +80,50 @@ def validate_startup():
         error_logger.error(f"❌ Ошибка валидации: {e}", exc_info=True)
         return False
 
+async def run_bot():
+    """Запуск бота с инициализацией БД"""
+    from app.database import init_database, close_database
+
+    app_logger = logging.getLogger("app")
+
+    try:
+        # Инициализация БД
+        app_logger.info("🗄️  Инициализация базы данных...")
+        await init_database()
+        app_logger.info("✅ База данных готова")
+
+        # Запуск бота
+        await start_bot()
+
+    finally:
+        # Закрытие соединения с БД
+        app_logger.info("🗄️  Закрытие соединения с БД...")
+        await close_database()
+
+
 def main():
     """Главная функция запуска бота"""
     # Настройка логирования
     setup_logging()
     app_logger = logging.getLogger("app")
-    
+
     try:
         app_logger.info("🚀 Запуск бота 'Отмазочник'")
-        
+
         # Расширенная валидация
         if not validate_startup():
             app_logger.error("❌ Валидация не прошла, остановка")
             return
-            
+
         app_logger.info("✅ Все проверки пройдены, запуск бота")
-        
-        # Запуск бота
-        asyncio.run(start_bot())
-        
+
+        # Запуск бота с БД
+        asyncio.run(run_bot())
+
     except KeyboardInterrupt:
         app_logger.info("⏹️  Бот остановлен пользователем")
     except Exception as e:
-        error_logger = logging.getLogger("error") 
+        error_logger = logging.getLogger("error")
         error_logger.error(f"❌ Критическая ошибка: {e}", exc_info=True)
         raise
     finally:

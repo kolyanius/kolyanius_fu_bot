@@ -1,15 +1,19 @@
 """
-Основная логика Telegram-бота "Отмазочник"
+Основная логика Telegram-бота "Отмазочник" v2.0
+Новые фичи: feedback, regenerate, history, favorites, voice messages
 """
 import logging
 import random
-from aiogram import Bot, Dispatcher, types
+import time
+import io
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from app.config import config
 from app.llm_client import generate_text
-from app.prompts import BASIC_PROMPT, EXCUSE_PROMPTS
+from app.prompts import EXCUSE_PROMPTS
 from app.styles import STYLES
+from app import database as db
 
 # Настройка логирования
 logger = logging.getLogger("app")
@@ -20,173 +24,511 @@ request_logger = logging.getLogger("requests")
 bot = Bot(token=config.TELEGRAM_BOT_TOKEN)
 dp = Dispatcher()
 
-# Хранение состояний пользователей
-user_states = {}
+# Хранение временных состояний (для регенерации)
+regenerate_cache = {}  # {user_id: {"original_message": str, "style": str}}
+
 
 def create_style_keyboard() -> InlineKeyboardMarkup:
     """Создать клавиатуру выбора стилей"""
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
-                text=f"{STYLES['быдло']['emoji']} {STYLES['быдло']['name']}", 
+                text=f"{STYLES['быдло']['emoji']} {STYLES['быдло']['name']}",
                 callback_data="style_быдло"
             ),
             InlineKeyboardButton(
-                text=f"{STYLES['корпорат']['emoji']} {STYLES['корпорат']['name']}", 
+                text=f"{STYLES['корпорат']['emoji']} {STYLES['корпорат']['name']}",
                 callback_data="style_корпорат"
             )
         ],
         [
             InlineKeyboardButton(
-                text=f"{STYLES['монах']['emoji']} {STYLES['монах']['name']}", 
+                text=f"{STYLES['монах']['emoji']} {STYLES['монах']['name']}",
                 callback_data="style_монах"
             ),
             InlineKeyboardButton(
-                text=f"{STYLES['инфоцыган']['emoji']} {STYLES['инфоцыган']['name']}", 
+                text=f"{STYLES['инфоцыган']['emoji']} {STYLES['инфоцыган']['name']}",
                 callback_data="style_инфоцыган"
             )
         ],
         [
             InlineKeyboardButton(
-                text=f"{STYLES['случайный']['emoji']} {STYLES['случайный']['name']}", 
+                text=f"{STYLES['случайный']['emoji']} {STYLES['случайный']['name']}",
                 callback_data="style_случайный"
             )
         ]
     ])
     return keyboard
 
+
+def create_action_keyboard(excuse_id: int, is_fav: bool = False) -> InlineKeyboardMarkup:
+    """Создать клавиатуру действий после генерации (feedback, regenerate, favorite)"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="👍", callback_data=f"rate_up_{excuse_id}"),
+            InlineKeyboardButton(text="👎", callback_data=f"rate_down_{excuse_id}"),
+            InlineKeyboardButton(
+                text="⭐ Убрать" if is_fav else "⭐ В избранное",
+                callback_data=f"fav_toggle_{excuse_id}"
+            )
+        ],
+        [
+            InlineKeyboardButton(text="🔄 Другой вариант", callback_data="regenerate")
+        ]
+    ])
+    return keyboard
+
+
+# ==================== КОМАНДЫ ====================
+
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
     """Обработчик команды /start"""
+    user_id = message.from_user.id
+    username = message.from_user.username
+    first_name = message.from_user.first_name
+
+    # Создаем или обновляем пользователя в БД
+    await db.get_or_create_user(user_id, username, first_name)
+
     await message.answer(
-        "Привет! Я бот-отмазочник! 🎭\n\n"
-        "Опиши свою ситуацию, и я создам отмазку в выбранном стиле.\n\n"
-        f"Максимум {config.MAX_MESSAGE_LENGTH} символов.\n\n"
-        "Попробуй написать что-нибудь!"
+        "🎭 Привет! Я бот-отмазочник v2.0!\n\n"
+        "**Что я умею:**\n"
+        "✅ Генерировать отмазки в 4 стилях\n"
+        "✅ Принимать голосовые сообщения\n"
+        "✅ Сохранять историю и избранное\n\n"
+        f"📝 Опиши ситуацию (макс {config.MAX_MESSAGE_LENGTH} символов) или отправь голосовое!\n\n"
+        "**Команды:**\n"
+        "/help - Помощь и описание стилей\n"
+        "/history - История твоих отмазок\n"
+        "/favorites - Избранные отмазки\n"
+        "/stats - Твоя статистика"
     )
+
 
 @dp.message(Command("help"))
 async def help_handler(message: types.Message):
     """Обработчик команды /help"""
-    help_text = "🎭 Доступные стили отмазок:\n\n"
-    
+    help_text = "🎭 **Доступные стили отмазок:**\n\n"
+
     for style_key, style_info in STYLES.items():
         if style_key != "случайный":
             help_text += f"{style_info['emoji']} **{style_info['name']}** - {style_info['description']}\n\n"
-    
+
     help_text += f"{STYLES['случайный']['emoji']} **{STYLES['случайный']['name']}** - {STYLES['случайный']['description']}\n\n"
-    help_text += "Просто опиши свою ситуацию, и я покажу кнопки для выбора стиля!"
-    
+    help_text += "**Как пользоваться:**\n"
+    help_text += "1. Опиши ситуацию текстом или голосом\n"
+    help_text += "2. Выбери стиль отмазки\n"
+    help_text += "3. Оцени результат 👍/👎\n"
+    help_text += "4. Добавь в избранное ⭐\n"
+    help_text += "5. Или запроси другой вариант 🔄"
+
     await message.answer(help_text)
 
-@dp.message()
-async def message_handler(message: types.Message):
-    """Обработчик сообщений - показывает кнопки выбора стиля"""
+
+@dp.message(Command("history"))
+async def history_handler(message: types.Message):
+    """Обработчик команды /history - показывает последние 10 отмазок"""
+    user_id = message.from_user.id
+
+    try:
+        excuses = await db.get_user_history(user_id, limit=10)
+
+        if not excuses:
+            await message.answer(
+                "📭 Твоя история пуста!\n\n"
+                "Отправь мне ситуацию и я создам первую отмазку."
+            )
+            return
+
+        response = f"📜 **Твоя история** (последние {len(excuses)} отмазок):\n\n"
+
+        for i, excuse in enumerate(excuses, 1):
+            style_emoji = STYLES[excuse.style]['emoji']
+            rating_text = ""
+            if excuse.rating == 1:
+                rating_text = " 👍"
+            elif excuse.rating == -1:
+                rating_text = " 👎"
+
+            response += f"{i}. {style_emoji} **{STYLES[excuse.style]['name']}**{rating_text}\n"
+            response += f"   _{excuse.original_message[:50]}..._\n"
+            response += f"   {excuse.generated_text[:100]}...\n\n"
+
+        response += "💡 Используй /favorites для просмотра избранного"
+
+        await message.answer(response)
+
+    except Exception as e:
+        error_logger.error(f"Error in history_handler for user {user_id}: {e}", exc_info=True)
+        await message.answer("❌ Ошибка при загрузке истории")
+
+
+@dp.message(Command("favorites"))
+async def favorites_handler(message: types.Message):
+    """Обработчик команды /favorites - показывает избранные отмазки"""
+    user_id = message.from_user.id
+
+    try:
+        favorites = await db.get_user_favorites(user_id, limit=20)
+
+        if not favorites:
+            await message.answer(
+                "⭐ Избранное пусто!\n\n"
+                "После генерации отмазки нажми ⭐ чтобы добавить её в избранное."
+            )
+            return
+
+        response = f"⭐ **Твоё избранное** ({len(favorites)} отмазок):\n\n"
+
+        for i, excuse in enumerate(favorites, 1):
+            style_emoji = STYLES[excuse.style]['emoji']
+            response += f"{i}. {style_emoji} **{STYLES[excuse.style]['name']}**\n"
+            response += f"   _{excuse.original_message[:50]}..._\n"
+            response += f"   {excuse.generated_text}\n\n"
+
+        await message.answer(response)
+
+    except Exception as e:
+        error_logger.error(f"Error in favorites_handler for user {user_id}: {e}", exc_info=True)
+        await message.answer("❌ Ошибка при загрузке избранного")
+
+
+@dp.message(Command("stats"))
+async def stats_handler(message: types.Message):
+    """Обработчик команды /stats - показывает статистику пользователя"""
+    user_id = message.from_user.id
+
+    try:
+        stats = await db.get_user_stats(user_id)
+        user = await db.get_or_create_user(user_id)
+
+        response = "📊 **Твоя статистика:**\n\n"
+        response += f"🎭 Всего отмазок: {stats['total_excuses']}\n"
+        response += f"⭐ В избранном: {stats['total_favorites']}\n"
+
+        if stats['favorite_style']:
+            fav_style = STYLES[stats['favorite_style']]
+            response += f"💎 Любимый стиль: {fav_style['emoji']} {fav_style['name']}\n"
+
+        response += f"\n📅 С нами с: {user.created_at.strftime('%d.%m.%Y')}"
+
+        await message.answer(response)
+
+    except Exception as e:
+        error_logger.error(f"Error in stats_handler for user {user_id}: {e}", exc_info=True)
+        await message.answer("❌ Ошибка при загрузке статистики")
+
+
+# ==================== ОБРАБОТКА ГОЛОСОВЫХ СООБЩЕНИЙ ====================
+
+@dp.message(F.voice)
+async def voice_handler(message: types.Message):
+    """Обработчик голосовых сообщений - транскрипция через Whisper API"""
     user_id = message.from_user.id
     username = message.from_user.username or "Unknown"
-    
+
     try:
+        await message.answer("🎤 Обрабатываю голосовое сообщение...")
+
+        # Скачиваем голосовое сообщение
+        voice = message.voice
+        file = await bot.get_file(voice.file_id)
+        voice_bytes = io.BytesIO()
+        await bot.download_file(file.file_path, voice_bytes)
+        voice_bytes.seek(0)
+
+        # Транскрибируем через OpenAI Whisper API
+        from app.llm_client import get_client
+        client = get_client()
+
+        # Создаем файл с правильным расширением
+        voice_bytes.name = "voice.ogg"
+
+        transcription = await client.audio.transcriptions.create(
+            model="whisper-1",
+            file=voice_bytes
+        )
+
+        transcribed_text = transcription.text.strip()
+        logger.info(f"Transcribed voice from user {user_id}: {transcribed_text[:100]}")
+
+        # Валидация длины
+        if len(transcribed_text) > config.MAX_MESSAGE_LENGTH:
+            await message.answer(
+                f"🎤 Распознано: _{transcribed_text[:100]}..._\n\n"
+                f"❌ Слишком длинное сообщение! Максимум {config.MAX_MESSAGE_LENGTH} символов.\n"
+                f"У тебя {len(transcribed_text)} символов."
+            )
+            return
+
+        # Сохраняем в кэш для регенерации
+        regenerate_cache[user_id] = {"original_message": transcribed_text}
+
+        # Показываем кнопки выбора стиля
+        keyboard = create_style_keyboard()
+        await message.answer(
+            f"🎤 Распознано: _{transcribed_text}_\n\n"
+            "Выбери стиль для отмазки:",
+            reply_markup=keyboard
+        )
+
+        request_logger.info(f"VOICE | User: {user_id} (@{username}) | Text: '{transcribed_text}' | Length: {len(transcribed_text)}")
+
+    except Exception as e:
+        error_logger.error(f"Error in voice_handler for user {user_id}: {e}", exc_info=True)
+        await message.answer(
+            "❌ Ошибка при обработке голосового сообщения.\n"
+            "Попробуй отправить текстом или повтори позже."
+        )
+
+
+# ==================== ОБРАБОТКА ТЕКСТОВЫХ СООБЩЕНИЙ ====================
+
+@dp.message(F.text)
+async def message_handler(message: types.Message):
+    """Обработчик текстовых сообщений - показывает кнопки выбора стиля"""
+    user_id = message.from_user.id
+    username = message.from_user.username or "Unknown"
+
+    try:
+        # Создаем или обновляем пользователя
+        await db.get_or_create_user(user_id, username, message.from_user.first_name)
+
         # Логируем входящее сообщение
-        request_logger.info(f"MESSAGE | User: {user_id} (@{username}) | Text: '{message.text[:100]}...' | Length: {len(message.text)}")
-        
+        request_logger.info(f"MESSAGE | User: {user_id} (@{username}) | Text: '{message.text[:100]}' | Length: {len(message.text)}")
+
         # Валидация длины сообщения
         if len(message.text) > config.MAX_MESSAGE_LENGTH:
             logger.warning(f"Message too long from user {user_id}: {len(message.text)} chars")
             await message.answer(
-                f"Сообщение слишком длинное! Максимум {config.MAX_MESSAGE_LENGTH} символов.\n"
+                f"📝 Сообщение слишком длинное! Максимум {config.MAX_MESSAGE_LENGTH} символов.\n"
                 f"У тебя {len(message.text)} символов."
             )
             return
-        
-        # Сохраняем сообщение пользователя
-        user_states[user_id] = {
-            "original_message": message.text,
-            "message_id": message.message_id,
-            "username": username
-        }
-        
+
+        # Сохраняем сообщение для регенерации
+        regenerate_cache[user_id] = {"original_message": message.text}
+
         # Показываем кнопки выбора стиля
         keyboard = create_style_keyboard()
         await message.answer(
-            "Выбери стиль для отмазки:",
+            "🎨 Выбери стиль для отмазки:",
             reply_markup=keyboard
         )
-        
+
         logger.info(f"Style selection shown to user {user_id}")
-        
+
     except Exception as e:
         error_logger.error(f"ERROR in message_handler | User: {user_id} | Error: {e}", exc_info=True)
-        try:
-            await message.answer("Произошла ошибка. Попробуйте еще раз или напишите /start")
-        except:
-            pass  # Даже ответить не получается
+        await message.answer("❌ Произошла ошибка. Попробуй еще раз или напиши /start")
 
-@dp.callback_query()
+
+# ==================== ОБРАБОТКА CALLBACK КНОПОК ====================
+
+@dp.callback_query(F.data.startswith("style_"))
 async def style_callback_handler(callback: types.CallbackQuery):
-    """Обработчик нажатий на кнопки стилей"""
+    """Обработчик нажатий на кнопки стилей - генерирует отмазку"""
     user_id = callback.from_user.id
     username = callback.from_user.username or "Unknown"
-    
+
     try:
-        if not callback.data.startswith("style_"):
-            await callback.answer("Неизвестная команда")
-            return
-        
         # Извлекаем выбранный стиль
         selected_style = callback.data.replace("style_", "")
-        
+
         # Проверяем есть ли сохраненное сообщение
-        if user_id not in user_states:
-            await callback.answer("Сначала отправь сообщение с ситуацией!")
-            logger.warning(f"No saved message for user {user_id} when selecting style")
+        if user_id not in regenerate_cache:
+            await callback.answer("❌ Сначала отправь сообщение с ситуацией!")
+            logger.warning(f"No cached message for user {user_id} when selecting style")
             return
-        
-        original_message = user_states[user_id]["original_message"]
-        
+
+        original_message = regenerate_cache[user_id]["original_message"]
+
         # Обрабатываем случайный стиль
         actual_style = selected_style
         if selected_style == "случайный":
             available_styles = [s for s in STYLES.keys() if s != "случайный"]
             actual_style = random.choice(available_styles)
             logger.info(f"Random style selected for user {user_id}: {actual_style}")
-        
+
+        # Сохраняем стиль для регенерации
+        regenerate_cache[user_id]["style"] = actual_style
+
         # Логируем выбор стиля
         request_logger.info(f"STYLE_SELECTED | User: {user_id} (@{username}) | Selected: {selected_style} | Actual: {actual_style}")
-        
+
         # Показываем что бот печатает
         await callback.bot.send_chat_action(chat_id=callback.message.chat.id, action="typing")
-        
+
         # Формируем промпт для выбранного стиля
         prompt = EXCUSE_PROMPTS[actual_style].format(user_message=original_message)
-        
+
         # Генерируем отмазку через LLM
+        start_time = time.time()
         response = await generate_text(prompt, user_id=user_id, style=actual_style)
-        
-        # Отправляем отмазку с эмодзи стиля
+        response_time = time.time() - start_time
+
+        # Сохраняем в БД
+        excuse = await db.create_excuse(
+            user_id=user_id,
+            original_message=original_message,
+            style=actual_style,
+            generated_text=response,
+            response_time=response_time
+        )
+
+        # Проверяем, в избранном ли
+        is_fav = await db.is_favorite(user_id, excuse.id)
+
+        # Отправляем отмазку с кнопками действий
         style_emoji = STYLES[actual_style]["emoji"]
         style_name = STYLES[actual_style]["name"]
-        
+
+        keyboard = create_action_keyboard(excuse.id, is_fav)
+
         await callback.message.edit_text(
-            f"**Стиль: {style_emoji} {style_name}**\n\n{response}"
+            f"**Стиль: {style_emoji} {style_name}**\n\n{response}",
+            reply_markup=keyboard
         )
-        
+
         # Подтверждаем callback
-        await callback.answer(f"Отмазка в стиле '{style_name}' готова!")
-        
+        await callback.answer(f"✅ Отмазка готова!")
+
         # Логируем завершение
-        logger.info(f"Excuse generated successfully for user {user_id} in style {actual_style}")
-        
-        # Очищаем состояние пользователя
-        if user_id in user_states:
-            del user_states[user_id]
-            
+        logger.info(f"Excuse {excuse.id} generated for user {user_id} in style {actual_style}")
+
     except Exception as e:
-        error_logger.error(f"ERROR in style_callback_handler | User: {user_id} | Callback: {callback.data} | Error: {e}", exc_info=True)
+        error_logger.error(f"ERROR in style_callback_handler | User: {user_id} | Error: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка при генерации отмазки")
         try:
-            await callback.answer("Произошла ошибка при генерации отмазки")
-            await callback.message.edit_text("❌ Произошла ошибка. Попробуйте еще раз или напишите /start")
+            await callback.message.edit_text("❌ Произошла ошибка. Попробуй еще раз или напиши /start")
         except:
             pass
+
+
+@dp.callback_query(F.data.startswith("rate_"))
+async def rating_callback_handler(callback: types.CallbackQuery):
+    """Обработчик оценок 👍/👎"""
+    user_id = callback.from_user.id
+
+    try:
+        # Парсим данные: rate_up_123 или rate_down_123
+        parts = callback.data.split("_")
+        action = parts[1]  # up или down
+        excuse_id = int(parts[2])
+
+        rating = 1 if action == "up" else -1
+
+        # Обновляем рейтинг в БД
+        await db.update_excuse_rating(excuse_id, rating)
+
+        # Обновляем клавиатуру
+        is_fav = await db.is_favorite(user_id, excuse_id)
+        keyboard = create_action_keyboard(excuse_id, is_fav)
+
+        await callback.message.edit_reply_markup(reply_markup=keyboard)
+
+        emoji = "👍" if rating == 1 else "👎"
+        await callback.answer(f"{emoji} Спасибо за оценку!")
+
+        logger.info(f"User {user_id} rated excuse {excuse_id}: {rating}")
+
+    except Exception as e:
+        error_logger.error(f"Error in rating_callback_handler: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка при сохранении оценки")
+
+
+@dp.callback_query(F.data.startswith("fav_toggle_"))
+async def favorite_toggle_handler(callback: types.CallbackQuery):
+    """Обработчик добавления/удаления из избранного"""
+    user_id = callback.from_user.id
+
+    try:
+        # Парсим данные: fav_toggle_123
+        excuse_id = int(callback.data.split("_")[2])
+
+        # Проверяем текущий статус
+        is_fav = await db.is_favorite(user_id, excuse_id)
+
+        if is_fav:
+            # Удаляем из избранного
+            await db.remove_from_favorites(user_id, excuse_id)
+            await callback.answer("⭐ Удалено из избранного")
+            logger.info(f"User {user_id} removed excuse {excuse_id} from favorites")
+        else:
+            # Добавляем в избранное
+            await db.add_to_favorites(user_id, excuse_id)
+            await callback.answer("⭐ Добавлено в избранное!")
+            logger.info(f"User {user_id} added excuse {excuse_id} to favorites")
+
+        # Обновляем клавиатуру
+        keyboard = create_action_keyboard(excuse_id, not is_fav)
+        await callback.message.edit_reply_markup(reply_markup=keyboard)
+
+    except Exception as e:
+        error_logger.error(f"Error in favorite_toggle_handler: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка при работе с избранным")
+
+
+@dp.callback_query(F.data == "regenerate")
+async def regenerate_handler(callback: types.CallbackQuery):
+    """Обработчик кнопки 🔄 Другой вариант - регенерирует отмазку"""
+    user_id = callback.from_user.id
+    username = callback.from_user.username or "Unknown"
+
+    try:
+        # Проверяем есть ли кэшированные данные
+        if user_id not in regenerate_cache or "style" not in regenerate_cache[user_id]:
+            await callback.answer("❌ Данные для регенерации не найдены. Отправь новое сообщение.")
+            return
+
+        original_message = regenerate_cache[user_id]["original_message"]
+        style = regenerate_cache[user_id]["style"]
+
+        # Показываем что бот печатает
+        await callback.bot.send_chat_action(chat_id=callback.message.chat.id, action="typing")
+        await callback.answer("🔄 Генерирую новый вариант...")
+
+        # Формируем промпт
+        prompt = EXCUSE_PROMPTS[style].format(user_message=original_message)
+
+        # Генерируем новую отмазку
+        start_time = time.time()
+        response = await generate_text(prompt, user_id=user_id, style=style)
+        response_time = time.time() - start_time
+
+        # Сохраняем в БД
+        excuse = await db.create_excuse(
+            user_id=user_id,
+            original_message=original_message,
+            style=style,
+            generated_text=response,
+            response_time=response_time
+        )
+
+        # Проверяем избранное
+        is_fav = await db.is_favorite(user_id, excuse.id)
+
+        # Отправляем новую отмазку
+        style_emoji = STYLES[style]["emoji"]
+        style_name = STYLES[style]["name"]
+
+        keyboard = create_action_keyboard(excuse.id, is_fav)
+
+        await callback.message.edit_text(
+            f"**Стиль: {style_emoji} {style_name}** 🔄\n\n{response}",
+            reply_markup=keyboard
+        )
+
+        request_logger.info(f"REGENERATE | User: {user_id} (@{username}) | Style: {style} | Excuse: {excuse.id}")
+        logger.info(f"Regenerated excuse {excuse.id} for user {user_id}")
+
+    except Exception as e:
+        error_logger.error(f"Error in regenerate_handler: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка при регенерации")
+
+
+# ==================== ЗАПУСК БОТА ====================
 
 async def start_bot():
     """Запуск бота"""
