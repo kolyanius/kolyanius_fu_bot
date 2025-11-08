@@ -29,6 +29,24 @@ dp = Dispatcher()
 regenerate_cache = {}  # {user_id: {"original_message": str, "style": str}}
 
 
+def create_main_menu_keyboard() -> InlineKeyboardMarkup:
+    """Создать главное меню бота"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="📝 Новая отмазка", callback_data="menu_new")
+        ],
+        [
+            InlineKeyboardButton(text="📜 История", callback_data="menu_history"),
+            InlineKeyboardButton(text="⭐ Избранное", callback_data="menu_favorites")
+        ],
+        [
+            InlineKeyboardButton(text="📊 Статистика", callback_data="menu_stats"),
+            InlineKeyboardButton(text="❓ Помощь", callback_data="menu_help")
+        ]
+    ])
+    return keyboard
+
+
 def create_style_keyboard() -> InlineKeyboardMarkup:
     """Создать клавиатуру выбора стилей"""
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -57,6 +75,9 @@ def create_style_keyboard() -> InlineKeyboardMarkup:
                 text=f"{STYLES['случайный']['emoji']} {STYLES['случайный']['name']}",
                 callback_data="style_случайный"
             )
+        ],
+        [
+            InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")
         ]
     ])
     return keyboard
@@ -75,6 +96,9 @@ def create_action_keyboard(excuse_id: int, is_fav: bool = False) -> InlineKeyboa
         ],
         [
             InlineKeyboardButton(text="🔄 Другой вариант", callback_data="regenerate")
+        ],
+        [
+            InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")
         ]
     ])
     return keyboard
@@ -92,18 +116,16 @@ async def start_handler(message: types.Message):
     # Создаем или обновляем пользователя в БД
     await db.get_or_create_user(user_id, username, first_name)
 
+    keyboard = create_main_menu_keyboard()
+
     await message.answer(
-        "🎭 Привет! Я бот-отмазочник v2.0!\n\n"
+        "🎭 **Привет! Я бот-отмазочник v2.0!**\n\n"
         "**Что я умею:**\n"
         "✅ Генерировать отмазки в 4 стилях\n"
         "✅ Принимать голосовые сообщения\n"
         "✅ Сохранять историю и избранное\n\n"
-        f"📝 Опиши ситуацию (макс {config.MAX_MESSAGE_LENGTH} символов) или отправь голосовое!\n\n"
-        "**Команды:**\n"
-        "/help - Помощь и описание стилей\n"
-        "/history - История твоих отмазок\n"
-        "/favorites - Избранные отмазки\n"
-        "/stats - Твоя статистика"
+        "💡 Выбери действие из меню ниже:",
+        reply_markup=keyboard
     )
 
 
@@ -333,6 +355,186 @@ async def message_handler(message: types.Message):
 
 
 # ==================== ОБРАБОТКА CALLBACK КНОПОК ====================
+
+@dp.callback_query(F.data == "back_to_menu")
+async def back_to_menu_handler(callback: types.CallbackQuery):
+    """Обработчик возврата в главное меню"""
+    try:
+        keyboard = create_main_menu_keyboard()
+
+        await callback.message.edit_text(
+            "🎭 **Главное меню**\n\n"
+            "💡 Выбери действие из меню ниже:",
+            reply_markup=keyboard
+        )
+        await callback.answer()
+    except Exception as e:
+        error_logger.error(f"Error in back_to_menu_handler: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка")
+
+
+@dp.callback_query(F.data == "menu_new")
+async def menu_new_handler(callback: types.CallbackQuery):
+    """Обработчик кнопки 'Новая отмазка'"""
+    try:
+        await callback.message.edit_text(
+            "📝 **Создать новую отмазку**\n\n"
+            f"Опиши свою ситуацию текстом (макс {config.MAX_MESSAGE_LENGTH} символов) "
+            "или отправь голосовое сообщение.\n\n"
+            "После этого я предложу тебе выбрать стиль отмазки! 🎨"
+        )
+        await callback.answer()
+    except Exception as e:
+        error_logger.error(f"Error in menu_new_handler: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка")
+
+
+@dp.callback_query(F.data == "menu_history")
+async def menu_history_handler(callback: types.CallbackQuery):
+    """Обработчик кнопки 'История'"""
+    user_id = callback.from_user.id
+
+    try:
+        excuses = await db.get_user_history(user_id, limit=10)
+
+        if not excuses:
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
+            ])
+            await callback.message.edit_text(
+                "📭 **Твоя история пуста!**\n\n"
+                "Отправь мне ситуацию и я создам первую отмазку.",
+                reply_markup=keyboard
+            )
+            await callback.answer()
+            return
+
+        response = f"📜 **Твоя история** (последние {len(excuses)} отмазок):\n\n"
+
+        for i, excuse in enumerate(excuses, 1):
+            style_emoji = STYLES[excuse.style]['emoji']
+            rating_text = ""
+            if excuse.rating == 1:
+                rating_text = " 👍"
+            elif excuse.rating == -1:
+                rating_text = " 👎"
+
+            response += f"{i}. {style_emoji} **{STYLES[excuse.style]['name']}**{rating_text}\n"
+            response += f"   _{excuse.original_message[:50]}..._\n"
+            response += f"   {excuse.generated_text[:100]}...\n\n"
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
+        ])
+
+        await callback.message.edit_text(response, reply_markup=keyboard)
+        await callback.answer()
+
+    except Exception as e:
+        error_logger.error(f"Error in menu_history_handler for user {user_id}: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка при загрузке истории")
+
+
+@dp.callback_query(F.data == "menu_favorites")
+async def menu_favorites_handler(callback: types.CallbackQuery):
+    """Обработчик кнопки 'Избранное'"""
+    user_id = callback.from_user.id
+
+    try:
+        favorites = await db.get_user_favorites(user_id, limit=20)
+
+        if not favorites:
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
+            ])
+            await callback.message.edit_text(
+                "⭐ **Избранное пусто!**\n\n"
+                "После генерации отмазки нажми ⭐ чтобы добавить её в избранное.",
+                reply_markup=keyboard
+            )
+            await callback.answer()
+            return
+
+        response = f"⭐ **Твоё избранное** ({len(favorites)} отмазок):\n\n"
+
+        for i, excuse in enumerate(favorites, 1):
+            style_emoji = STYLES[excuse.style]['emoji']
+            response += f"{i}. {style_emoji} **{STYLES[excuse.style]['name']}**\n"
+            response += f"   _{excuse.original_message[:50]}..._\n"
+            response += f"   {excuse.generated_text[:150]}...\n\n"
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
+        ])
+
+        await callback.message.edit_text(response, reply_markup=keyboard)
+        await callback.answer()
+
+    except Exception as e:
+        error_logger.error(f"Error in menu_favorites_handler for user {user_id}: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка при загрузке избранного")
+
+
+@dp.callback_query(F.data == "menu_stats")
+async def menu_stats_handler(callback: types.CallbackQuery):
+    """Обработчик кнопки 'Статистика'"""
+    user_id = callback.from_user.id
+
+    try:
+        stats = await db.get_user_stats(user_id)
+        user = await db.get_or_create_user(user_id)
+
+        response = "📊 **Твоя статистика:**\n\n"
+        response += f"🎭 Всего отмазок: {stats['total_excuses']}\n"
+        response += f"⭐ В избранном: {stats['total_favorites']}\n"
+
+        if stats['favorite_style']:
+            fav_style = STYLES[stats['favorite_style']]
+            response += f"💎 Любимый стиль: {fav_style['emoji']} {fav_style['name']}\n"
+
+        response += f"\n📅 С нами с: {user.created_at.strftime('%d.%m.%Y')}"
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
+        ])
+
+        await callback.message.edit_text(response, reply_markup=keyboard)
+        await callback.answer()
+
+    except Exception as e:
+        error_logger.error(f"Error in menu_stats_handler for user {user_id}: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка при загрузке статистики")
+
+
+@dp.callback_query(F.data == "menu_help")
+async def menu_help_handler(callback: types.CallbackQuery):
+    """Обработчик кнопки 'Помощь'"""
+    try:
+        help_text = "🎭 **Доступные стили отмазок:**\n\n"
+
+        for style_key, style_info in STYLES.items():
+            if style_key != "случайный":
+                help_text += f"{style_info['emoji']} **{style_info['name']}** - {style_info['description']}\n\n"
+
+        help_text += f"{STYLES['случайный']['emoji']} **{STYLES['случайный']['name']}** - {STYLES['случайный']['description']}\n\n"
+        help_text += "**Как пользоваться:**\n"
+        help_text += "1. Опиши ситуацию текстом или голосом\n"
+        help_text += "2. Выбери стиль отмазки\n"
+        help_text += "3. Оцени результат 👍/👎\n"
+        help_text += "4. Добавь в избранное ⭐\n"
+        help_text += "5. Или запроси другой вариант 🔄"
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
+        ])
+
+        await callback.message.edit_text(help_text, reply_markup=keyboard)
+        await callback.answer()
+
+    except Exception as e:
+        error_logger.error(f"Error in menu_help_handler: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка")
+
 
 @dp.callback_query(F.data.startswith("style_"))
 async def style_callback_handler(callback: types.CallbackQuery):
