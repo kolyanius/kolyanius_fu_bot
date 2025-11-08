@@ -249,13 +249,16 @@ async def voice_handler(message: types.Message):
         # Выполняем транскрипцию в executor (синхронный вызов в async)
         def transcribe():
             return whisper_client.audio.transcriptions.create(
-                model="whisper-1",
-                file=voice_bytes
+                model=config.WHISPER_MODEL,  # gpt-4o-mini-transcribe по умолчанию
+                file=voice_bytes,
+                response_format="text",  # Простой текст вместо JSON
+                prompt=config.WHISPER_PROMPT  # Промпт для улучшения качества
             )
 
         transcription = await asyncio.get_event_loop().run_in_executor(None, transcribe)
 
-        transcribed_text = transcription.text.strip()
+        # При response_format="text" возвращается просто строка
+        transcribed_text = transcription.strip() if isinstance(transcription, str) else transcription.text.strip()
         logger.info(f"Transcribed voice from user {user_id}: {transcribed_text[:100]}")
 
         # Валидация длины

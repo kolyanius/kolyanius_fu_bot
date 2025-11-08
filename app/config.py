@@ -25,6 +25,8 @@ class Config:
     # Можно указать отдельные, если Whisper на другом сервере
     WHISPER_API_KEY: str = os.getenv("WHISPER_API_KEY", os.getenv("OPENROUTER_API_KEY", ""))
     WHISPER_BASE_URL: str = os.getenv("WHISPER_BASE_URL", "https://api.openai.com/v1")  # Стандартный OpenAI endpoint
+    WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "gpt-4o-mini-transcribe")  # Быстрая и дешевая модель
+    WHISPER_PROMPT: str = "Транскрипция голосового сообщения на русском языке с описанием ситуации или проблемы."
 
     # Database
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://botuser:botpassword@localhost:5432/otmazochnik")
