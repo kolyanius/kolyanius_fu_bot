@@ -10,6 +10,7 @@ import io
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
+from aiogram.exceptions import TelegramBadRequest
 from app.config import config
 from app.llm_client import generate_text
 from app.prompts import EXCUSE_PROMPTS
@@ -643,7 +644,12 @@ async def rating_callback_handler(callback: types.CallbackQuery):
         is_fav = await db.is_favorite(user_id, excuse_id)
         keyboard = create_action_keyboard(excuse_id, is_fav)
 
-        await callback.message.edit_reply_markup(reply_markup=keyboard)
+        try:
+            await callback.message.edit_reply_markup(reply_markup=keyboard)
+        except TelegramBadRequest as e:
+            # Игнорируем ошибку "message is not modified" (когда пользователь нажал ту же кнопку повторно)
+            if "message is not modified" not in str(e):
+                raise
 
         emoji = "👍" if rating == 1 else "👎"
         await callback.answer(f"{emoji} Спасибо за оценку!")
@@ -680,7 +686,13 @@ async def favorite_toggle_handler(callback: types.CallbackQuery):
 
         # Обновляем клавиатуру
         keyboard = create_action_keyboard(excuse_id, not is_fav)
-        await callback.message.edit_reply_markup(reply_markup=keyboard)
+
+        try:
+            await callback.message.edit_reply_markup(reply_markup=keyboard)
+        except TelegramBadRequest as e:
+            # Игнорируем ошибку "message is not modified"
+            if "message is not modified" not in str(e):
+                raise
 
     except Exception as e:
         error_logger.error(f"Error in favorite_toggle_handler: {e}", exc_info=True)
