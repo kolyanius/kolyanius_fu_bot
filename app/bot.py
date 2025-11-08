@@ -10,6 +10,7 @@ import io
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
+from aiogram.exceptions import TelegramBadRequest
 from app.config import config
 from app.llm_client import generate_text
 from app.prompts import EXCUSE_PROMPTS
@@ -120,8 +121,8 @@ async def start_handler(message: types.Message):
     keyboard = create_main_menu_keyboard()
 
     await message.answer(
-        "🎭 **Привет! Я бот-отмазочник v2.0!**\n\n"
-        "**Что я умею:**\n"
+        "🎭 *Привет! Я бот-отмазочник v2.0!*\n\n"
+        "*Что я умею:*\n"
         "✅ Генерировать отмазки в 4 стилях\n"
         "✅ Принимать голосовые сообщения\n"
         "✅ Сохранять историю и избранное\n\n"
@@ -134,14 +135,14 @@ async def start_handler(message: types.Message):
 @dp.message(Command("help"))
 async def help_handler(message: types.Message):
     """Обработчик команды /help"""
-    help_text = "🎭 **Доступные стили отмазок:**\n\n"
+    help_text = "🎭 *Доступные стили отмазок:*\n\n"
 
     for style_key, style_info in STYLES.items():
         if style_key != "случайный":
-            help_text += f"{style_info['emoji']} **{style_info['name']}** - {style_info['description']}\n\n"
+            help_text += f"{style_info['emoji']} *{style_info['name']}* - {style_info['description']}\n\n"
 
-    help_text += f"{STYLES['случайный']['emoji']} **{STYLES['случайный']['name']}** - {STYLES['случайный']['description']}\n\n"
-    help_text += "**Как пользоваться:**\n"
+    help_text += f"{STYLES['случайный']['emoji']} *{STYLES['случайный']['name']}* - {STYLES['случайный']['description']}\n\n"
+    help_text += "*Как пользоваться:*\n"
     help_text += "1. Опиши ситуацию текстом или голосом\n"
     help_text += "2. Выбери стиль отмазки\n"
     help_text += "3. Оцени результат 👍/👎\n"
@@ -166,7 +167,7 @@ async def history_handler(message: types.Message):
             )
             return
 
-        response = f"📜 **Твоя история** (последние {len(excuses)} отмазок):\n\n"
+        response = f"📜 *Твоя история* (последние {len(excuses)} отмазок):\n\n"
 
         for i, excuse in enumerate(excuses, 1):
             style_emoji = STYLES[excuse.style]['emoji']
@@ -176,9 +177,12 @@ async def history_handler(message: types.Message):
             elif excuse.rating == -1:
                 rating_text = " 👎"
 
-            response += f"{i}. {style_emoji} **{STYLES[excuse.style]['name']}**{rating_text}\n"
-            response += f"   _{excuse.original_message[:50]}..._\n"
-            response += f"   {excuse.generated_text[:100]}...\n\n"
+            # Сокращаем ситуацию до 100 символов для компактности
+            situation = excuse.original_message[:100] + ('...' if len(excuse.original_message) > 100 else '')
+
+            response += f"{i}. {style_emoji} *{STYLES[excuse.style]['name']}*{rating_text}\n"
+            response += f"   _Ситуация: {situation}_\n"
+            response += f"   {excuse.generated_text}\n\n"
 
         response += "💡 Используй /favorites для просмотра избранного"
 
@@ -204,12 +208,15 @@ async def favorites_handler(message: types.Message):
             )
             return
 
-        response = f"⭐ **Твоё избранное** ({len(favorites)} отмазок):\n\n"
+        response = f"⭐ *Твоё избранное* ({len(favorites)} отмазок):\n\n"
 
         for i, excuse in enumerate(favorites, 1):
             style_emoji = STYLES[excuse.style]['emoji']
-            response += f"{i}. {style_emoji} **{STYLES[excuse.style]['name']}**\n"
-            response += f"   _{excuse.original_message[:50]}..._\n"
+            # Сокращаем ситуацию до 100 символов для компактности
+            situation = excuse.original_message[:100] + ('...' if len(excuse.original_message) > 100 else '')
+
+            response += f"{i}. {style_emoji} *{STYLES[excuse.style]['name']}*\n"
+            response += f"   _Ситуация: {situation}_\n"
             response += f"   {excuse.generated_text}\n\n"
 
         await message.answer(response, parse_mode="Markdown")
@@ -228,7 +235,7 @@ async def stats_handler(message: types.Message):
         stats = await db.get_user_stats(user_id)
         user = await db.get_or_create_user(user_id)
 
-        response = "📊 **Твоя статистика:**\n\n"
+        response = "📊 *Твоя статистика:*\n\n"
         response += f"🎭 Всего отмазок: {stats['total_excuses']}\n"
         response += f"⭐ В избранном: {stats['total_favorites']}\n"
 
@@ -365,7 +372,7 @@ async def back_to_menu_handler(callback: types.CallbackQuery):
         keyboard = create_main_menu_keyboard()
 
         await callback.message.edit_text(
-            "🎭 **Главное меню**\n\n"
+            "🎭 *Главное меню*\n\n"
             "💡 Выбери действие из меню ниже:",
             reply_markup=keyboard,
             parse_mode="Markdown"
@@ -381,7 +388,7 @@ async def menu_new_handler(callback: types.CallbackQuery):
     """Обработчик кнопки 'Новая отмазка'"""
     try:
         await callback.message.edit_text(
-            "📝 **Создать новую отмазку**\n\n"
+            "📝 *Создать новую отмазку*\n\n"
             f"Опиши свою ситуацию текстом (макс {config.MAX_MESSAGE_LENGTH} символов) "
             "или отправь голосовое сообщение.\n\n"
             "После этого я предложу тебе выбрать стиль отмазки! 🎨",
@@ -406,7 +413,7 @@ async def menu_history_handler(callback: types.CallbackQuery):
                 [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
             ])
             await callback.message.edit_text(
-                "📭 **Твоя история пуста!**\n\n"
+                "📭 *Твоя история пуста!*\n\n"
                 "Отправь мне ситуацию и я создам первую отмазку.",
                 reply_markup=keyboard,
                 parse_mode="Markdown"
@@ -414,7 +421,7 @@ async def menu_history_handler(callback: types.CallbackQuery):
             await callback.answer()
             return
 
-        response = f"📜 **Твоя история** (последние {len(excuses)} отмазок):\n\n"
+        response = f"📜 *Твоя история* (последние {len(excuses)} отмазок):\n\n"
 
         for i, excuse in enumerate(excuses, 1):
             style_emoji = STYLES[excuse.style]['emoji']
@@ -424,9 +431,12 @@ async def menu_history_handler(callback: types.CallbackQuery):
             elif excuse.rating == -1:
                 rating_text = " 👎"
 
-            response += f"{i}. {style_emoji} **{STYLES[excuse.style]['name']}**{rating_text}\n"
-            response += f"   _{excuse.original_message[:50]}..._\n"
-            response += f"   {excuse.generated_text[:100]}...\n\n"
+            # Сокращаем ситуацию до 100 символов для компактности
+            situation = excuse.original_message[:100] + ('...' if len(excuse.original_message) > 100 else '')
+
+            response += f"{i}. {style_emoji} *{STYLES[excuse.style]['name']}*{rating_text}\n"
+            response += f"   _Ситуация: {situation}_\n"
+            response += f"   {excuse.generated_text}\n\n"
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
@@ -453,7 +463,7 @@ async def menu_favorites_handler(callback: types.CallbackQuery):
                 [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
             ])
             await callback.message.edit_text(
-                "⭐ **Избранное пусто!**\n\n"
+                "⭐ *Избранное пусто!*\n\n"
                 "После генерации отмазки нажми ⭐ чтобы добавить её в избранное.",
                 reply_markup=keyboard,
                 parse_mode="Markdown"
@@ -461,13 +471,16 @@ async def menu_favorites_handler(callback: types.CallbackQuery):
             await callback.answer()
             return
 
-        response = f"⭐ **Твоё избранное** ({len(favorites)} отмазок):\n\n"
+        response = f"⭐ *Твоё избранное* ({len(favorites)} отмазок):\n\n"
 
         for i, excuse in enumerate(favorites, 1):
             style_emoji = STYLES[excuse.style]['emoji']
-            response += f"{i}. {style_emoji} **{STYLES[excuse.style]['name']}**\n"
-            response += f"   _{excuse.original_message[:50]}..._\n"
-            response += f"   {excuse.generated_text[:150]}...\n\n"
+            # Сокращаем ситуацию до 100 символов для компактности
+            situation = excuse.original_message[:100] + ('...' if len(excuse.original_message) > 100 else '')
+
+            response += f"{i}. {style_emoji} *{STYLES[excuse.style]['name']}*\n"
+            response += f"   _Ситуация: {situation}_\n"
+            response += f"   {excuse.generated_text}\n\n"
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
@@ -490,7 +503,7 @@ async def menu_stats_handler(callback: types.CallbackQuery):
         stats = await db.get_user_stats(user_id)
         user = await db.get_or_create_user(user_id)
 
-        response = "📊 **Твоя статистика:**\n\n"
+        response = "📊 *Твоя статистика:*\n\n"
         response += f"🎭 Всего отмазок: {stats['total_excuses']}\n"
         response += f"⭐ В избранном: {stats['total_favorites']}\n"
 
@@ -516,14 +529,14 @@ async def menu_stats_handler(callback: types.CallbackQuery):
 async def menu_help_handler(callback: types.CallbackQuery):
     """Обработчик кнопки 'Помощь'"""
     try:
-        help_text = "🎭 **Доступные стили отмазок:**\n\n"
+        help_text = "🎭 *Доступные стили отмазок:*\n\n"
 
         for style_key, style_info in STYLES.items():
             if style_key != "случайный":
-                help_text += f"{style_info['emoji']} **{style_info['name']}** - {style_info['description']}\n\n"
+                help_text += f"{style_info['emoji']} *{style_info['name']}* - {style_info['description']}\n\n"
 
-        help_text += f"{STYLES['случайный']['emoji']} **{STYLES['случайный']['name']}** - {STYLES['случайный']['description']}\n\n"
-        help_text += "**Как пользоваться:**\n"
+        help_text += f"{STYLES['случайный']['emoji']} *{STYLES['случайный']['name']}* - {STYLES['случайный']['description']}\n\n"
+        help_text += "*Как пользоваться:*\n"
         help_text += "1. Опиши ситуацию текстом или голосом\n"
         help_text += "2. Выбери стиль отмазки\n"
         help_text += "3. Оцени результат 👍/👎\n"
@@ -603,7 +616,7 @@ async def style_callback_handler(callback: types.CallbackQuery):
         keyboard = create_action_keyboard(excuse.id, is_fav)
 
         await callback.message.edit_text(
-            f"**Стиль: {style_emoji} {style_name}**\n\n{response}",
+            f"*Стиль: {style_emoji} {style_name}*\n\n{response}",
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
@@ -643,7 +656,12 @@ async def rating_callback_handler(callback: types.CallbackQuery):
         is_fav = await db.is_favorite(user_id, excuse_id)
         keyboard = create_action_keyboard(excuse_id, is_fav)
 
-        await callback.message.edit_reply_markup(reply_markup=keyboard)
+        try:
+            await callback.message.edit_reply_markup(reply_markup=keyboard)
+        except TelegramBadRequest as e:
+            # Игнорируем ошибку "message is not modified" (когда пользователь нажал ту же кнопку повторно)
+            if "message is not modified" not in str(e):
+                raise
 
         emoji = "👍" if rating == 1 else "👎"
         await callback.answer(f"{emoji} Спасибо за оценку!")
@@ -680,7 +698,13 @@ async def favorite_toggle_handler(callback: types.CallbackQuery):
 
         # Обновляем клавиатуру
         keyboard = create_action_keyboard(excuse_id, not is_fav)
-        await callback.message.edit_reply_markup(reply_markup=keyboard)
+
+        try:
+            await callback.message.edit_reply_markup(reply_markup=keyboard)
+        except TelegramBadRequest as e:
+            # Игнорируем ошибку "message is not modified"
+            if "message is not modified" not in str(e):
+                raise
 
     except Exception as e:
         error_logger.error(f"Error in favorite_toggle_handler: {e}", exc_info=True)
@@ -764,7 +788,7 @@ async def regenerate_handler(callback: types.CallbackQuery):
         keyboard = create_action_keyboard(excuse.id, is_fav)
 
         await callback.message.edit_text(
-            f"**Стиль: {style_emoji} {style_name}** 🔄\n\n{response}",
+            f"*Стиль: {style_emoji} {style_name}* 🔄\n\n{response}",
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
