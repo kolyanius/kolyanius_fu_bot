@@ -278,3 +278,70 @@ async def get_user_stats(user_id: int) -> dict:
             "total_favorites": total_favorites,
             "favorite_style": favorite_style
         }
+
+
+async def get_admin_stats() -> dict:
+    """
+    Получить общую статистику для администратора
+
+    Returns:
+        dict: Словарь со статистикой
+    """
+    async with get_session() as session:
+        # Общее количество пользователей
+        users_result = await session.execute(
+            select(func.count(User.user_id))
+        )
+        total_users = users_result.scalar()
+
+        # Общее количество сгенерированных отмазок
+        excuses_result = await session.execute(
+            select(func.count(Excuse.id))
+        )
+        total_excuses = excuses_result.scalar()
+
+        # Количество избранных
+        favorites_result = await session.execute(
+            select(func.count(Favorite.id))
+        )
+        total_favorites = favorites_result.scalar()
+
+        # Среднее время генерации
+        avg_time_result = await session.execute(
+            select(func.avg(Excuse.response_time))
+            .where(Excuse.response_time.isnot(None))
+        )
+        avg_response_time = avg_time_result.scalar()
+
+        # Самые активные пользователи (топ-5)
+        top_users_result = await session.execute(
+            select(
+                User.user_id,
+                User.username,
+                func.count(Excuse.id).label('excuse_count')
+            )
+            .join(Excuse, User.user_id == Excuse.user_id)
+            .group_by(User.user_id, User.username)
+            .order_by(desc('excuse_count'))
+            .limit(5)
+        )
+        top_users = top_users_result.all()
+
+        # Самый популярный стиль
+        style_result = await session.execute(
+            select(Excuse.style, func.count(Excuse.id).label('count'))
+            .group_by(Excuse.style)
+            .order_by(desc('count'))
+            .limit(1)
+        )
+        popular_style_row = style_result.first()
+        popular_style = popular_style_row[0] if popular_style_row else None
+
+        return {
+            "total_users": total_users,
+            "total_excuses": total_excuses,
+            "total_favorites": total_favorites,
+            "avg_response_time": round(avg_response_time, 2) if avg_response_time else None,
+            "top_users": [(user_id, username or "Unknown", count) for user_id, username, count in top_users],
+            "popular_style": popular_style
+        }

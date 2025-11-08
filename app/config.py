@@ -34,6 +34,9 @@ class Config:
     # Validation
     MAX_MESSAGE_LENGTH: int = 200
 
+    # Admin
+    ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "")
+
     # Logging
     LOG_LEVEL: str = "INFO"
 

@@ -286,6 +286,74 @@ async def stats_handler(message: types.Message):
         await message.answer("❌ Ошибка при загрузке статистики")
 
 
+@dp.message(Command("admin"))
+async def admin_handler(message: types.Message):
+    """Обработчик команды /admin <пароль> - показывает статистику администратора"""
+    user_id = message.from_user.id
+
+    try:
+        # Удаляем сообщение с командой (в нем может быть пароль)
+        try:
+            await message.delete()
+        except:
+            pass  # Если не удалось удалить - не критично
+
+        # Парсим команду
+        parts = message.text.split(maxsplit=1)
+
+        if len(parts) < 2:
+            await message.answer(
+                "🔐 *Админ-панель*\n\n"
+                "Использование: `/admin <пароль>`\n\n"
+                "_Сообщение с паролем будет автоматически удалено_",
+                parse_mode="Markdown"
+            )
+            return
+
+        password = parts[1]
+
+        # Проверяем пароль
+        if not config.ADMIN_PASSWORD:
+            await message.answer("❌ Админ-пароль не настроен в конфигурации")
+            return
+
+        if password != config.ADMIN_PASSWORD:
+            logger.warning(f"Failed admin login attempt from user {user_id}")
+            await message.answer("❌ Неверный пароль")
+            return
+
+        # Получаем статистику
+        stats = await db.get_admin_stats()
+
+        # Формируем ответ
+        response = "👑 *Админ-панель*\n\n"
+        response += "📊 *Общая статистика:*\n\n"
+        response += f"👥 Всего пользователей: {stats['total_users']}\n"
+        response += f"🎭 Всего отмазок: {stats['total_excuses']}\n"
+        response += f"⭐ Всего в избранном: {stats['total_favorites']}\n"
+
+        if stats['avg_response_time']:
+            response += f"⚡ Среднее время генерации: {stats['avg_response_time']}с\n"
+
+        if stats['popular_style']:
+            pop_style = STYLES[stats['popular_style']]
+            response += f"🔥 Популярный стиль: {pop_style['emoji']} {pop_style['name']}\n"
+
+        # Топ пользователей
+        if stats['top_users']:
+            response += "\n🏆 *Топ-5 пользователей:*\n"
+            for i, (uid, username, count) in enumerate(stats['top_users'], 1):
+                username_display = f"@{username}" if username else f"ID {uid}"
+                response += f"{i}. {username_display} - {count} отмазок\n"
+
+        await message.answer(response, parse_mode="Markdown")
+        logger.info(f"Admin panel accessed by user {user_id}")
+
+    except Exception as e:
+        error_logger.error(f"Error in admin_handler: {e}", exc_info=True)
+        await message.answer("❌ Ошибка при загрузке админ-статистики")
+
+
 # ==================== ОБРАБОТКА ГОЛОСОВЫХ СООБЩЕНИЙ ====================
 
 @dp.message(F.voice)
