@@ -154,11 +154,12 @@ async def help_handler(message: types.Message):
 
 @dp.message(Command("history"))
 async def history_handler(message: types.Message):
-    """Обработчик команды /history - показывает последние 10 отмазок"""
+    """Обработчик команды /history - показывает последние отмазки в пределах лимита"""
     user_id = message.from_user.id
 
     try:
-        excuses = await db.get_user_history(user_id, limit=10)
+        # Загружаем больше отмазок, чтобы выбрать те, что влезут
+        excuses = await db.get_user_history(user_id, limit=20)
 
         if not excuses:
             await message.answer(
@@ -167,7 +168,13 @@ async def history_handler(message: types.Message):
             )
             return
 
-        response = f"📜 *Твоя история* (последние {len(excuses)} отмазок):\n\n"
+        # Telegram лимит 4096 символов, оставляем запас
+        MAX_LENGTH = 3700
+        header = "📜 *Твоя история*\n\n"
+        footer = "\n\n💡 Используй /favorites для просмотра избранного"
+
+        response = header
+        added_count = 0
 
         for i, excuse in enumerate(excuses, 1):
             style_emoji = STYLES[excuse.style]['emoji']
@@ -177,14 +184,25 @@ async def history_handler(message: types.Message):
             elif excuse.rating == -1:
                 rating_text = " 👎"
 
-            # Сокращаем ситуацию до 100 символов для компактности
+            # Формируем текст отмазки БЕЗ сокращения
             situation = excuse.original_message[:100] + ('...' if len(excuse.original_message) > 100 else '')
 
-            response += f"{i}. {style_emoji} *{STYLES[excuse.style]['name']}*{rating_text}\n"
-            response += f"   _Ситуация: {situation}_\n"
-            response += f"   {excuse.generated_text}\n\n"
+            excuse_entry = f"{i}. {style_emoji} *{STYLES[excuse.style]['name']}*{rating_text}\n"
+            excuse_entry += f"   _Ситуация: {situation}_\n"
+            excuse_entry += f"   {excuse.generated_text}\n\n"
 
-        response += "💡 Используй /favorites для просмотра избранного"
+            # Проверяем, влезет ли эта отмазка
+            if len(response + excuse_entry + footer) > MAX_LENGTH:
+                break
+
+            response += excuse_entry
+            added_count += 1
+
+        # Показываем сколько отмазок из скольких
+        if added_count < len(excuses):
+            response += f"\n_Показано {added_count} из {len(excuses)} отмазок_"
+
+        response += footer
 
         await message.answer(response, parse_mode="Markdown")
 
@@ -195,11 +213,11 @@ async def history_handler(message: types.Message):
 
 @dp.message(Command("favorites"))
 async def favorites_handler(message: types.Message):
-    """Обработчик команды /favorites - показывает избранные отмазки"""
+    """Обработчик команды /favorites - показывает избранные отмазки в пределах лимита"""
     user_id = message.from_user.id
 
     try:
-        favorites = await db.get_user_favorites(user_id, limit=20)
+        favorites = await db.get_user_favorites(user_id, limit=50)
 
         if not favorites:
             await message.answer(
@@ -208,16 +226,32 @@ async def favorites_handler(message: types.Message):
             )
             return
 
-        response = f"⭐ *Твоё избранное* ({len(favorites)} отмазок):\n\n"
+        # Telegram лимит 4096 символов, оставляем запас
+        MAX_LENGTH = 3700
+        header = "⭐ *Твоё избранное*\n\n"
+
+        response = header
+        added_count = 0
 
         for i, excuse in enumerate(favorites, 1):
             style_emoji = STYLES[excuse.style]['emoji']
-            # Сокращаем ситуацию до 100 символов для компактности
             situation = excuse.original_message[:100] + ('...' if len(excuse.original_message) > 100 else '')
 
-            response += f"{i}. {style_emoji} *{STYLES[excuse.style]['name']}*\n"
-            response += f"   _Ситуация: {situation}_\n"
-            response += f"   {excuse.generated_text}\n\n"
+            # Формируем текст БЕЗ сокращения отмазки
+            excuse_entry = f"{i}. {style_emoji} *{STYLES[excuse.style]['name']}*\n"
+            excuse_entry += f"   _Ситуация: {situation}_\n"
+            excuse_entry += f"   {excuse.generated_text}\n\n"
+
+            # Проверяем, влезет ли эта отмазка
+            if len(response + excuse_entry) > MAX_LENGTH:
+                break
+
+            response += excuse_entry
+            added_count += 1
+
+        # Показываем сколько отмазок из скольких
+        if added_count < len(favorites):
+            response += f"\n_Показано {added_count} из {len(favorites)} избранных_"
 
         await message.answer(response, parse_mode="Markdown")
 
@@ -406,7 +440,7 @@ async def menu_history_handler(callback: types.CallbackQuery):
     user_id = callback.from_user.id
 
     try:
-        excuses = await db.get_user_history(user_id, limit=10)
+        excuses = await db.get_user_history(user_id, limit=20)
 
         if not excuses:
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -421,7 +455,13 @@ async def menu_history_handler(callback: types.CallbackQuery):
             await callback.answer()
             return
 
-        response = f"📜 *Твоя история* (последние {len(excuses)} отмазок):\n\n"
+        # Telegram лимит 4096 символов, оставляем запас
+        MAX_LENGTH = 3700
+        header = "📜 *Твоя история*\n\n"
+        footer = "\n\n💡 Используй /favorites для просмотра избранного"
+
+        response = header
+        added_count = 0
 
         for i, excuse in enumerate(excuses, 1):
             style_emoji = STYLES[excuse.style]['emoji']
@@ -431,12 +471,25 @@ async def menu_history_handler(callback: types.CallbackQuery):
             elif excuse.rating == -1:
                 rating_text = " 👎"
 
-            # Сокращаем ситуацию до 100 символов для компактности
             situation = excuse.original_message[:100] + ('...' if len(excuse.original_message) > 100 else '')
 
-            response += f"{i}. {style_emoji} *{STYLES[excuse.style]['name']}*{rating_text}\n"
-            response += f"   _Ситуация: {situation}_\n"
-            response += f"   {excuse.generated_text}\n\n"
+            # Формируем текст БЕЗ сокращения отмазки
+            excuse_entry = f"{i}. {style_emoji} *{STYLES[excuse.style]['name']}*{rating_text}\n"
+            excuse_entry += f"   _Ситуация: {situation}_\n"
+            excuse_entry += f"   {excuse.generated_text}\n\n"
+
+            # Проверяем, влезет ли эта отмазка
+            if len(response + excuse_entry + footer) > MAX_LENGTH:
+                break
+
+            response += excuse_entry
+            added_count += 1
+
+        # Показываем сколько отмазок из скольких
+        if added_count < len(excuses):
+            response += f"\n_Показано {added_count} из {len(excuses)} отмазок_"
+
+        response += footer
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
@@ -456,7 +509,7 @@ async def menu_favorites_handler(callback: types.CallbackQuery):
     user_id = callback.from_user.id
 
     try:
-        favorites = await db.get_user_favorites(user_id, limit=20)
+        favorites = await db.get_user_favorites(user_id, limit=50)
 
         if not favorites:
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -471,16 +524,32 @@ async def menu_favorites_handler(callback: types.CallbackQuery):
             await callback.answer()
             return
 
-        response = f"⭐ *Твоё избранное* ({len(favorites)} отмазок):\n\n"
+        # Telegram лимит 4096 символов, оставляем запас
+        MAX_LENGTH = 3700
+        header = "⭐ *Твоё избранное*\n\n"
+
+        response = header
+        added_count = 0
 
         for i, excuse in enumerate(favorites, 1):
             style_emoji = STYLES[excuse.style]['emoji']
-            # Сокращаем ситуацию до 100 символов для компактности
             situation = excuse.original_message[:100] + ('...' if len(excuse.original_message) > 100 else '')
 
-            response += f"{i}. {style_emoji} *{STYLES[excuse.style]['name']}*\n"
-            response += f"   _Ситуация: {situation}_\n"
-            response += f"   {excuse.generated_text}\n\n"
+            # Формируем текст БЕЗ сокращения отмазки
+            excuse_entry = f"{i}. {style_emoji} *{STYLES[excuse.style]['name']}*\n"
+            excuse_entry += f"   _Ситуация: {situation}_\n"
+            excuse_entry += f"   {excuse.generated_text}\n\n"
+
+            # Проверяем, влезет ли эта отмазка
+            if len(response + excuse_entry) > MAX_LENGTH:
+                break
+
+            response += excuse_entry
+            added_count += 1
+
+        # Показываем сколько отмазок из скольких
+        if added_count < len(favorites):
+            response += f"\n_Показано {added_count} из {len(favorites)} избранных_"
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
