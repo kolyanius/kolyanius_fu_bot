@@ -126,7 +126,8 @@ async def start_handler(message: types.Message):
         "✅ Принимать голосовые сообщения\n"
         "✅ Сохранять историю и избранное\n\n"
         "💡 Выбери действие из меню ниже:",
-        reply_markup=keyboard
+        reply_markup=keyboard,
+        parse_mode="Markdown"
     )
 
 
@@ -147,7 +148,7 @@ async def help_handler(message: types.Message):
     help_text += "4. Добавь в избранное ⭐\n"
     help_text += "5. Или запроси другой вариант 🔄"
 
-    await message.answer(help_text)
+    await message.answer(help_text, parse_mode="Markdown")
 
 
 @dp.message(Command("history"))
@@ -181,7 +182,7 @@ async def history_handler(message: types.Message):
 
         response += "💡 Используй /favorites для просмотра избранного"
 
-        await message.answer(response)
+        await message.answer(response, parse_mode="Markdown")
 
     except Exception as e:
         error_logger.error(f"Error in history_handler for user {user_id}: {e}", exc_info=True)
@@ -211,7 +212,7 @@ async def favorites_handler(message: types.Message):
             response += f"   _{excuse.original_message[:50]}..._\n"
             response += f"   {excuse.generated_text}\n\n"
 
-        await message.answer(response)
+        await message.answer(response, parse_mode="Markdown")
 
     except Exception as e:
         error_logger.error(f"Error in favorites_handler for user {user_id}: {e}", exc_info=True)
@@ -237,7 +238,7 @@ async def stats_handler(message: types.Message):
 
         response += f"\n📅 С нами с: {user.created_at.strftime('%d.%m.%Y')}"
 
-        await message.answer(response)
+        await message.answer(response, parse_mode="Markdown")
 
     except Exception as e:
         error_logger.error(f"Error in stats_handler for user {user_id}: {e}", exc_info=True)
@@ -366,7 +367,8 @@ async def back_to_menu_handler(callback: types.CallbackQuery):
         await callback.message.edit_text(
             "🎭 **Главное меню**\n\n"
             "💡 Выбери действие из меню ниже:",
-            reply_markup=keyboard
+            reply_markup=keyboard,
+            parse_mode="Markdown"
         )
         await callback.answer()
     except Exception as e:
@@ -382,7 +384,8 @@ async def menu_new_handler(callback: types.CallbackQuery):
             "📝 **Создать новую отмазку**\n\n"
             f"Опиши свою ситуацию текстом (макс {config.MAX_MESSAGE_LENGTH} символов) "
             "или отправь голосовое сообщение.\n\n"
-            "После этого я предложу тебе выбрать стиль отмазки! 🎨"
+            "После этого я предложу тебе выбрать стиль отмазки! 🎨",
+            parse_mode="Markdown"
         )
         await callback.answer()
     except Exception as e:
@@ -405,7 +408,8 @@ async def menu_history_handler(callback: types.CallbackQuery):
             await callback.message.edit_text(
                 "📭 **Твоя история пуста!**\n\n"
                 "Отправь мне ситуацию и я создам первую отмазку.",
-                reply_markup=keyboard
+                reply_markup=keyboard,
+                parse_mode="Markdown"
             )
             await callback.answer()
             return
@@ -428,7 +432,7 @@ async def menu_history_handler(callback: types.CallbackQuery):
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
         ])
 
-        await callback.message.edit_text(response, reply_markup=keyboard)
+        await callback.message.edit_text(response, reply_markup=keyboard, parse_mode="Markdown")
         await callback.answer()
 
     except Exception as e:
@@ -451,7 +455,8 @@ async def menu_favorites_handler(callback: types.CallbackQuery):
             await callback.message.edit_text(
                 "⭐ **Избранное пусто!**\n\n"
                 "После генерации отмазки нажми ⭐ чтобы добавить её в избранное.",
-                reply_markup=keyboard
+                reply_markup=keyboard,
+                parse_mode="Markdown"
             )
             await callback.answer()
             return
@@ -468,7 +473,7 @@ async def menu_favorites_handler(callback: types.CallbackQuery):
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
         ])
 
-        await callback.message.edit_text(response, reply_markup=keyboard)
+        await callback.message.edit_text(response, reply_markup=keyboard, parse_mode="Markdown")
         await callback.answer()
 
     except Exception as e:
@@ -499,7 +504,7 @@ async def menu_stats_handler(callback: types.CallbackQuery):
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
         ])
 
-        await callback.message.edit_text(response, reply_markup=keyboard)
+        await callback.message.edit_text(response, reply_markup=keyboard, parse_mode="Markdown")
         await callback.answer()
 
     except Exception as e:
@@ -529,7 +534,7 @@ async def menu_help_handler(callback: types.CallbackQuery):
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
         ])
 
-        await callback.message.edit_text(help_text, reply_markup=keyboard)
+        await callback.message.edit_text(help_text, reply_markup=keyboard, parse_mode="Markdown")
         await callback.answer()
 
     except Exception as e:
@@ -599,7 +604,8 @@ async def style_callback_handler(callback: types.CallbackQuery):
 
         await callback.message.edit_text(
             f"**Стиль: {style_emoji} {style_name}**\n\n{response}",
-            reply_markup=keyboard
+            reply_markup=keyboard,
+            parse_mode="Markdown"
         )
 
         # Подтверждаем callback
@@ -700,7 +706,8 @@ async def change_style_handler(callback: types.CallbackQuery):
         await callback.message.edit_text(
             f"📝 Твоя ситуация: _{original_message[:100]}{'...' if len(original_message) > 100 else ''}_\n\n"
             "🎨 Выбери новый стиль для отмазки:",
-            reply_markup=keyboard
+            reply_markup=keyboard,
+            parse_mode="Markdown"
         )
         await callback.answer("🎨 Выбери стиль")
 
@@ -758,7 +765,8 @@ async def regenerate_handler(callback: types.CallbackQuery):
 
         await callback.message.edit_text(
             f"**Стиль: {style_emoji} {style_name}** 🔄\n\n{response}",
-            reply_markup=keyboard
+            reply_markup=keyboard,
+            parse_mode="Markdown"
         )
 
         request_logger.info(f"REGENERATE | User: {user_id} (@{username}) | Style: {style} | Excuse: {excuse.id}")
