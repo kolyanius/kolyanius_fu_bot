@@ -13,7 +13,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Скопировать код приложения
 COPY app/ ./app/
-COPY logs/ ./logs/
+
+# Создать директорию для логов (создается автоматически при запуске)
+RUN mkdir -p logs
 
 # Скопировать Alembic конфигурацию для миграций
 COPY alembic/ ./alembic/
