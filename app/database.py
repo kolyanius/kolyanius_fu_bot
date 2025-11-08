@@ -42,9 +42,8 @@ async def init_database():
         expire_on_commit=False
     )
 
-    # Создаем таблицы (для первого запуска, если миграции не выполнены)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Примечание: Таблицы создаются через Alembic миграции в entrypoint.sh
+    # При запуске через Docker миграции применяются автоматически
 
     logger.info("Database initialized successfully")
 
