@@ -2,6 +2,7 @@
 Основная логика Telegram-бота "Отмазочник" v2.0
 Новые фичи: feedback, regenerate, history, favorites, voice messages
 """
+import asyncio
 import logging
 import random
 import time
@@ -239,16 +240,20 @@ async def voice_handler(message: types.Message):
         voice_bytes.seek(0)
 
         # Транскрибируем через OpenAI Whisper API
-        from app.llm_client import get_client
-        client = get_client()
+        from app.llm_client import get_whisper_client
+        whisper_client = get_whisper_client()
 
         # Создаем файл с правильным расширением
         voice_bytes.name = "voice.ogg"
 
-        transcription = await client.audio.transcriptions.create(
-            model="whisper-1",
-            file=voice_bytes
-        )
+        # Выполняем транскрипцию в executor (синхронный вызов в async)
+        def transcribe():
+            return whisper_client.audio.transcriptions.create(
+                model="whisper-1",
+                file=voice_bytes
+            )
+
+        transcription = await asyncio.get_event_loop().run_in_executor(None, transcribe)
 
         transcribed_text = transcription.text.strip()
         logger.info(f"Transcribed voice from user {user_id}: {transcribed_text[:100]}")

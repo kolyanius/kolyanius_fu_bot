@@ -11,23 +11,40 @@ logger = logging.getLogger(__name__)
 error_logger = logging.getLogger("error")
 request_logger = logging.getLogger("requests")
 
-# Ленивая инициализация клиента
-_client = None
+# Ленивая инициализация клиентов
+_llm_client = None
+_whisper_client = None
 
 def get_client():
-    """Получить OpenAI клиент с ленивой инициализацией"""
-    global _client
-    if _client is None:
-        logger.info(f"Initializing OpenAI client: {config.LLM_BASE_URL}")
-        logger.info(f"API key length: {len(config.OPENROUTER_API_KEY)}")
-        
-        _client = openai.OpenAI(
+    """Получить OpenAI клиент для LLM с ленивой инициализацией"""
+    global _llm_client
+    if _llm_client is None:
+        logger.info(f"Initializing LLM client: {config.LLM_BASE_URL}")
+        logger.info(f"LLM API key length: {len(config.OPENROUTER_API_KEY)}")
+
+        _llm_client = openai.OpenAI(
             base_url=config.LLM_BASE_URL,
             api_key=config.OPENROUTER_API_KEY,
             timeout=15.0,   # Разумный timeout
             max_retries=0   # Собственная retry логика
         )
-    return _client
+    return _llm_client
+
+
+def get_whisper_client():
+    """Получить OpenAI клиент для Whisper API с ленивой инициализацией"""
+    global _whisper_client
+    if _whisper_client is None:
+        logger.info(f"Initializing Whisper client: {config.WHISPER_BASE_URL}")
+        logger.info(f"Whisper API key length: {len(config.WHISPER_API_KEY)}")
+
+        _whisper_client = openai.OpenAI(
+            base_url=config.WHISPER_BASE_URL,
+            api_key=config.WHISPER_API_KEY,
+            timeout=30.0,   # Whisper может быть медленнее
+            max_retries=1
+        )
+    return _whisper_client
 
 
 async def generate_text(prompt: str, user_id: int = None, style: str = "unknown") -> str:

@@ -71,8 +71,14 @@ TELEGRAM_BOT_TOKEN=your_bot_token_here
 OPENROUTER_API_KEY=your_openrouter_key_here
 
 # Опциональные (можно оставить по умолчанию)
-LLM_BASE_URL=https://gptunnel.ru/v1
+LLM_BASE_URL=https://openrouter.ai/api/v1
 DATABASE_URL=postgresql+asyncpg://botuser:botpassword@postgres:5432/otmazochnik
+
+# Whisper API для голосовых сообщений (опционально)
+# По умолчанию используется OPENROUTER_API_KEY
+# Раскомментируйте если нужен отдельный API ключ для Whisper
+# WHISPER_API_KEY=your_openai_key_here
+# WHISPER_BASE_URL=https://api.openai.com/v1
 ```
 
 ### Шаг 3: Получение токенов
@@ -83,13 +89,37 @@ DATABASE_URL=postgresql+asyncpg://botuser:botpassword@postgres:5432/otmazochnik
 3. Следуйте инструкциям для создания бота
 4. Скопируйте полученный токен в `.env` файл
 
-#### OpenRouter API Key:
+#### OpenRouter API Key (для GPT-4o):
 1. Зарегистрируйтесь на [OpenRouter](https://openrouter.ai)
 2. Перейдите в раздел API Keys
 3. Создайте новый ключ
-4. Скопируйте ключ в `.env` файл
+4. Скопируйте ключ в `.env` файл как `OPENROUTER_API_KEY`
 
 **Альтернатива:** Используйте [gptunnel.ru](https://gptunnel.ru) для доступа к API
+
+#### Whisper API Key (для голосовых сообщений):
+
+**Вариант 1: Использовать тот же ключ (по умолчанию)**
+- Если ваш OpenRouter или gptunnel поддерживает Whisper API
+- Ничего дополнительно не нужно настраивать
+- Бот автоматически использует `OPENROUTER_API_KEY`
+
+**Вариант 2: Отдельный OpenAI ключ**
+- Зарегистрируйтесь на [OpenAI](https://platform.openai.com)
+- Получите API ключ
+- Добавьте в `.env`:
+  ```bash
+  WHISPER_API_KEY=sk-your_openai_key_here
+  WHISPER_BASE_URL=https://api.openai.com/v1
+  ```
+
+**Вариант 3: Другой провайдер Whisper API**
+- Если у вас свой сервер или другой провайдер
+- Укажите соответствующий URL и ключ:
+  ```bash
+  WHISPER_API_KEY=your_key_here
+  WHISPER_BASE_URL=https://your-whisper-api.com/v1
+  ```
 
 ### Шаг 4: Запуск бота
 
@@ -115,8 +145,10 @@ docker compose down
 | Переменная | Описание | Обязательно | По умолчанию |
 |-----------|----------|-------------|--------------|
 | `TELEGRAM_BOT_TOKEN` | Токен Telegram бота | ✅ | - |
-| `OPENROUTER_API_KEY` | API ключ OpenRouter | ✅ | - |
+| `OPENROUTER_API_KEY` | API ключ для LLM (GPT-4o) | ✅ | - |
 | `LLM_BASE_URL` | URL LLM провайдера | ❌ | `https://gptunnel.ru/v1` |
+| `WHISPER_API_KEY` | API ключ для Whisper (транскрипция) | ❌ | `OPENROUTER_API_KEY` |
+| `WHISPER_BASE_URL` | URL Whisper API | ❌ | `https://api.openai.com/v1` |
 | `DATABASE_URL` | URL PostgreSQL базы | ❌ | `postgresql+asyncpg://...` |
 | `LOG_LEVEL` | Уровень логирования | ❌ | `INFO` |
 
@@ -131,6 +163,38 @@ TEMPERATURE: float = 0.7         # Креативность (0.0 - 1.0)
 RETRY_COUNT: int = 1             # Количество повторов
 MAX_MESSAGE_LENGTH: int = 200    # Лимит длины сообщений
 ```
+
+### Настройка Whisper API
+
+#### Как работает Whisper API в боте:
+
+1. **По умолчанию** - использует те же credentials что и LLM:
+   - `WHISPER_API_KEY` = `OPENROUTER_API_KEY`
+   - `WHISPER_BASE_URL` = `https://api.openai.com/v1`
+
+2. **Отдельная настройка** - укажите в `.env`:
+   ```bash
+   WHISPER_API_KEY=sk-your_separate_key
+   WHISPER_BASE_URL=https://your-provider.com/v1
+   ```
+
+3. **Проверка в коде** (app/llm_client.py):
+   ```python
+   def get_whisper_client():
+       """Отдельный клиент для Whisper API"""
+       return openai.OpenAI(
+           base_url=config.WHISPER_BASE_URL,
+           api_key=config.WHISPER_API_KEY,
+           timeout=30.0
+       )
+   ```
+
+#### Поддерживаемые провайдеры Whisper:
+
+- **OpenAI** (рекомендуется): `https://api.openai.com/v1`
+- **OpenRouter**: `https://openrouter.ai/api/v1` (если поддерживает Whisper)
+- **gptunnel.ru**: `https://gptunnel.ru/v1` (проверьте наличие Whisper)
+- **Локальный Whisper**: Ваш собственный endpoint
 
 ### Настройка базы данных
 
@@ -177,9 +241,9 @@ kolyanius_fu_bot/
 ├── app/                        # Основной код приложения
 │   ├── __init__.py            # Package metadata
 │   ├── main.py                # Entry point, инициализация
-│   ├── config.py              # Конфигурация
+│   ├── config.py              # Конфигурация (включая Whisper)
 │   ├── bot.py                 # Telegram handlers (v2.0)
-│   ├── llm_client.py          # OpenRouter API client
+│   ├── llm_client.py          # OpenRouter + Whisper API clients
 │   ├── database.py            # Database service layer (NEW)
 │   ├── models.py              # SQLAlchemy models (NEW)
 │   ├── prompts.py             # LLM промпты
@@ -406,14 +470,90 @@ Bot: ⭐ Твоё избранное (3 отмазки):
 MODEL_NAME: str = "gpt-4o-mini"  # Для экономии
 ```
 
-### Voice Transcription
+### Voice Transcription (Whisper API)
 
-Голосовые сообщения обрабатываются через **OpenAI Whisper API**.
+Голосовые сообщения обрабатываются через **Whisper API**.
 
-Требования:
-- Формат: OGG, MP3, WAV
-- Максимальная длина: 10 минут
-- Язык: Автоопределение (поддержка русского)
+#### Архитектура:
+
+```
+User Voice Message
+    ↓
+Telegram Bot API (download .ogg file)
+    ↓
+get_whisper_client() [app/llm_client.py]
+    ↓
+WHISPER_BASE_URL + WHISPER_API_KEY
+    ↓
+Whisper model="whisper-1"
+    ↓
+Transcribed text
+    ↓
+Bot generates excuse
+```
+
+#### Конфигурация Whisper:
+
+**Файл: app/config.py**
+```python
+# Whisper API для транскрипции
+WHISPER_API_KEY: str = os.getenv(
+    "WHISPER_API_KEY",
+    os.getenv("OPENROUTER_API_KEY", "")  # fallback на LLM ключ
+)
+WHISPER_BASE_URL: str = os.getenv(
+    "WHISPER_BASE_URL",
+    "https://api.openai.com/v1"  # стандартный OpenAI endpoint
+)
+```
+
+**Файл: app/llm_client.py**
+```python
+def get_whisper_client():
+    """Отдельный клиент для Whisper API"""
+    return openai.OpenAI(
+        base_url=config.WHISPER_BASE_URL,
+        api_key=config.WHISPER_API_KEY,
+        timeout=30.0,  # Whisper может быть медленнее
+        max_retries=1
+    )
+```
+
+#### Использование в коде:
+
+**Файл: app/bot.py**
+```python
+from app.llm_client import get_whisper_client
+
+whisper_client = get_whisper_client()
+
+transcription = await asyncio.get_event_loop().run_in_executor(
+    None,
+    lambda: whisper_client.audio.transcriptions.create(
+        model="whisper-1",
+        file=voice_bytes
+    )
+)
+```
+
+#### Требования:
+- **Формат:** OGG, MP3, WAV, M4A, WEBM
+- **Максимальная длина:** 10 минут (ограничение Whisper API)
+- **Размер файла:** До 25 MB
+- **Язык:** Автоопределение (поддержка русского)
+- **Модель:** `whisper-1` (стандартная модель OpenAI)
+
+#### Проверка работы Whisper:
+
+```bash
+# Проверить логи при отправке голосового
+docker compose logs -f bot | grep Whisper
+
+# Ожидаемый вывод:
+# Initializing Whisper client: https://api.openai.com/v1
+# Whisper API key length: 51
+# Transcribed voice from user 123456789: не успел на встречу
+```
 
 ### Database Access
 
@@ -444,8 +584,10 @@ stats = await db.get_user_stats(user_id=123456789)
 ```
 2025-01-08 12:00:00 - app - INFO - 🚀 Запуск бота 'Отмазочник'
 2025-01-08 12:00:01 - app - INFO - 🗄️ Инициализация базы данных...
-2025-01-08 12:00:02 - app - INFO - ✅ База данных готова
-2025-01-08 12:00:03 - app - INFO - 🤖 Telegram бот запускается...
+2025-01-08 12:00:02 - app - INFO - Initializing LLM client: https://gptunnel.ru/v1
+2025-01-08 12:00:03 - app - INFO - Initializing Whisper client: https://api.openai.com/v1
+2025-01-08 12:00:04 - app - INFO - ✅ База данных готова
+2025-01-08 12:00:05 - app - INFO - 🤖 Telegram бот запускается...
 ```
 
 #### 2. `logs/errors.log` - Ошибки с трейсбэками
@@ -458,6 +600,7 @@ Traceback (most recent call last):
 #### 3. `logs/requests.log` - Запросы пользователей
 ```
 2025-01-08 12:10:00 - requests - INFO - MESSAGE | User: 123456789 (@username) | Text: 'не сделал отчёт' | Length: 15
+2025-01-08 12:10:01 - requests - INFO - VOICE | User: 123456789 (@username) | Text: 'не успел на встречу' | Length: 20
 2025-01-08 12:10:05 - requests - INFO - STYLE_SELECTED | User: 123456789 (@username) | Selected: корпорат | Actual: корпорат
 2025-01-08 12:10:08 - requests - INFO - SUCCESS | User: 123456789 | Style: корпорат | Time: 2.34s | Length: 145 | Attempts: 1
 ```
@@ -556,12 +699,44 @@ timeout=30.0  # было 15.0
 **Симптомы:**
 ```
 Error in voice_handler
+Error: Invalid API key
+Error: Whisper model not found
 ```
 
 **Решение:**
-1. Проверьте API ключ OpenRouter (Whisper требует того же ключа)
-2. Убедитесь что модель `whisper-1` доступна
-3. Проверьте размер голосового файла (макс 25 MB)
+
+**Случай 1: Неправильный API ключ**
+```bash
+# Проверьте логи
+docker compose logs bot | grep Whisper
+
+# Ожидаемый вывод:
+# Initializing Whisper client: https://api.openai.com/v1
+# Whisper API key length: 51  # Должен быть > 0
+
+# Если длина 0 - проверьте .env файл
+# Добавьте WHISPER_API_KEY или убедитесь что OPENROUTER_API_KEY валиден
+```
+
+**Случай 2: Неверный WHISPER_BASE_URL**
+```bash
+# Если используете OpenRouter - проверьте поддерживает ли он Whisper
+# Если нет - используйте прямой OpenAI endpoint:
+WHISPER_API_KEY=sk-your_openai_key
+WHISPER_BASE_URL=https://api.openai.com/v1
+```
+
+**Случай 3: Модель недоступна**
+```bash
+# Убедитесь что у вас есть доступ к Whisper API
+# OpenAI требует валидный API ключ с активной подпиской
+```
+
+**Случай 4: Проверить размер файла**
+```bash
+# Whisper API ограничен 25 MB
+# Проверить в логах размер голосового файла
+```
 
 ---
 
@@ -701,4 +876,4 @@ sudo systemctl enable docker
 
 **🎭 Бот готов генерировать креативные отмазки в production-режиме!**
 
-_Made with ❤️ using Python, aiogram, PostgreSQL, and GPT-4o_
+_Made with ❤️ using Python, aiogram, PostgreSQL, and GPT-4o + Whisper_
